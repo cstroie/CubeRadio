@@ -60,8 +60,8 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   MAIN LOOP (core 1, 150ms tick)         │
-│  OTA · HTTP server · WebSocket · MPD · controls · display│
+│                  MAIN LOOP (core 1, 150ms tick)         │
+│ OTA · HTTP server · WebSocket · MPD · controls · display│
 └───────────┬──────────────┬──────────────────────────────┘
             │              │
    ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐
@@ -82,7 +82,7 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
                   ┌────────────────┐
                   │ ESP32-audioI2S │  FreeRTOS task, core 0
                   │ HTTP→decode    │  audio->loop() every 1ms
-                  │ MP3/AAC/FLAC  │
+                  │ MP3/AAC/FLAC   │
                   └────────┬───────┘
                            │
                    I2S pins (BCLK, LRC, DOUT)

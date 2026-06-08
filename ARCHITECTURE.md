@@ -3,37 +3,37 @@
 ## Block Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  HARDWARE INPUTS                         HARDWARE OUTPUTS            │
-│  ┌────────────┐  ┌──────────────┐        ┌──────────┐  ┌──────────┐ │
-│  │  Rotary    │  │  Touch btns  │        │   OLED   │  │  I2S DAC │ │
-│  │  Encoder   │  │  (optional)  │        │  Display │  │ /Amp+Spk │ │
-│  └─────┬──────┘  └──────┬───────┘        └────┬─────┘  └────┬─────┘ │
+┌───────────────────────────────────────────────────────────────────────┐
+│  HARDWARE INPUTS                          HARDWARE OUTPUTS            │
+│  ┌────────────┐   ┌──────────────┐        ┌──────────┐   ┌──────────┐ │
+│  │  Rotary    │   │  Touch btns  │        │   OLED   │   │  I2S DAC │ │
+│  │  Encoder   │   │  (optional)  │        │  Display │   │ /Amp+Spk │ │
+│  └─────┬──────┘   └──────┬───────┘        └────┬─────┘   └────┬─────┘ │
 │        │ ISR             │ ISR/poll            │              │       │
 └────────┼─────────────────┼─────────────────────┼──────────────┼───────┘
          │                 │                     │              │
 ┌────────▼─────────────────▼─────────────────────▼──────────────▼───────┐
-│                        MAIN LOOP  (core 1, ~150 ms tick)               │
-│                                                                         │
-│  handleRotary()   handleTouch()   updateDisplay()   Audio watchdog      │
-│  handleBoardButton()   OTA.handle()   WiFi reconnect (60 s)             │
-│                                                                         │
+│                       MAIN LOOP  (core 1, ~150 ms tick)               │
+│                                                                       │
+│  handleRotary()   handleTouch()   updateDisplay()   Audio watchdog    │
+│  handleBoardButton()   OTA.handle()   WiFi reconnect (60 s)           │
+│                                                                       │
 │   ┌──────────────┐   ┌──────────────┐   ┌──────────────────────────┐  │
 │   │  WebServer   │   │  WebSocket   │   │     MPDInterface         │  │
 │   │  port 80     │   │  port 81     │   │     port 6600            │  │
 │   │  REST API    │   │  push status │   │     MPD 0.23.0           │  │
 │   └──────┬───────┘   └──────┬───────┘   └──────────┬───────────────┘  │
-└──────────┼──────────────────┼──────────────────────┼────────────────────┘
+└──────────┼──────────────────┼──────────────────────┼──────────────────┘
            │                  │                      │
            └──────────────────┴──────────────────────┘
                               │   all control paths converge
                     ┌─────────▼──────────┐
                     │      Player        │  player.cpp / player.h
-                    │                   │
+                    │                    │
                     │  PlayerState       │  playing, volume, tone,
                     │  StreamInfoData    │  url, name, title, bitrate
                     │  Playlist*         │  index, count
-                    │                   │
+                    │                    │
                     │  startStream()     │
                     │  stopStream()      │
                     │  setVolume()       │
@@ -43,9 +43,9 @@
                     ┌─────────▼──────────┐
                     │  ESP32-audioI2S    │  FreeRTOS task, core 0
                     │  (Audio library)   │  priority 5, 1 ms cycle
-                    │                   │
+                    │                    │
                     │  connecttohost()   │  HTTP/S → TCP stream
-                    │  loop()           │  decode MP3/AAC/FLAC
+                    │  loop()            │  decode MP3/AAC/FLAC
                     │  setVolume()       │  → I2S pins
                     │  setTone()         │
                     └─────────┬──────────┘
@@ -61,7 +61,7 @@
 
                     ┌────────────────────┐
                     │  Playlist          │  playlist.cpp / playlist.h
-                    │                   │
+                    │                    │
                     │  StreamInfo[20]    │  {name[96], url[128]}
                     │  load() / save()   │  ← /playlist.json (SPIFFS)
                     │  validate()        │
@@ -69,7 +69,7 @@
 
                     ┌────────────────────┐
                     │  SPIFFS storage    │
-                    │                   │
+                    │                    │
                     │  /config.json      │  Config struct ↔ web UI
                     │  /wifi.json        │  SSID/pass, max 5
                     │  /playlist.json    │  stations, max 20
