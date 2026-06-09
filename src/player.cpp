@@ -18,6 +18,7 @@
 
 #include "player.h"
 #include "playlist.h"
+#include <WiFi.h>
 #include "main.h"
 #include <ArduinoJson.h>
 #include <Audio.h>
@@ -202,6 +203,7 @@ void Player::loadPlayerState() {
     playerState.mid = doc["mid"] | 0;
     playerState.treble = doc["treble"] | 0;
     playerState.playlistIndex = doc["playlistIndex"] | 0;
+    playerState.totalPlayTime = doc["totalPlayTime"] | 0UL;
     Serial.println("Loaded player state from SPIFFS");
   } else {
     Serial.println("No player state file found, using defaults");
@@ -212,10 +214,17 @@ void Player::loadPlayerState() {
     audio->setVolume(playerState.volume);
     audio->setTone(playerState.bass, playerState.mid, playerState.treble);
   }
-  // If it was playing, resume playback
+  // If it was playing, resume playback — but only if WiFi is already connected.
+  // Attempting to stream without a network silently fails and leaves playing=true
+  // with no audio, confusing the watchdog restart logic.
   if (playerState.playing && isPlaylistIndexValid()) {
-    Serial.println("Resuming playback from saved state");
-    startStream(getCurrentPlaylistItemURL(), getCurrentPlaylistItemName());
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Resuming playback from saved state");
+      startStream(getCurrentPlaylistItemURL(), getCurrentPlaylistItemName());
+    } else {
+      Serial.println("WiFi not connected, deferring playback resume");
+      playerState.playing = false;
+    }
   }
 }
 
@@ -230,6 +239,7 @@ void Player::savePlayerState() {
   doc["mid"] = playerState.mid;
   doc["treble"] = playerState.treble;
   doc["playlistIndex"] = playerState.playlistIndex;
+  doc["totalPlayTime"] = playerState.totalPlayTime;
   if (writeJsonFile("/player.json", doc)) {
     Serial.println("Saved player state to SPIFFS");
     // Use critical section to protect against concurrent access to dirty flag

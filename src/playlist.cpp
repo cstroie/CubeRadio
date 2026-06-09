@@ -107,21 +107,9 @@ void Playlist::load() {
  * It creates a backup before saving and restores from backup if saving fails.
  */
 void Playlist::save() {
-  // Estimate required buffer size (rough estimation)
-  // Each entry needs approximately: {"name":"...","url":"..."},
-  // Plus some overhead for JSON structure
-  size_t estimatedSize = 1024; // Base size for JSON structure
-  for (int i = 0; i < count; i++) {
-    // Add estimated size for each entry (name + url + JSON overhead)
-    estimatedSize += strlen(playlist[i].name) + strlen(playlist[i].url) + 64;
-  }
-  // Ensure we don't exceed our maximum buffer size
-  if (estimatedSize > PLAYLIST_BUFFER_SIZE) {
-    Serial.println("Warning: Playlist too large, truncating to fit buffer");
-    estimatedSize = PLAYLIST_BUFFER_SIZE;
-  }
-  // Create JSON array with appropriate buffer size
-  DynamicJsonDocument doc(estimatedSize);
+  // Always allocate the maximum allowed buffer; dynamic under-estimation caused
+  // silent truncation when entries were near their size limits.
+  DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
   JsonArray array = doc.to<JsonArray>();
   // Add playlist entries
   for (int i = 0; i < count; i++) {

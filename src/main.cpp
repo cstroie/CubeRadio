@@ -288,7 +288,8 @@ bool writeJsonFile(const char* filename, DynamicJsonDocument& doc) {
       SPIFFS.remove(backupFilename);
     }
     if (!SPIFFS.rename(filename, backupFilename)) {
-      Serial.printf("Warning: Failed to create backup of %s\n", filename);
+      Serial.printf("Error: Failed to create backup of %s, aborting write\n", filename);
+      return false;
     }
   }
   // Open the file for writing
@@ -307,12 +308,17 @@ bool writeJsonFile(const char* filename, DynamicJsonDocument& doc) {
   }
   // Serialize the JSON document to the file
   size_t bytesWritten = serializeJson(doc, file);
-  if (bytesWritten == 0) {
-    Serial.printf("Failed to write JSON to file: %s\n", filename);
-    file.close();
+  file.close();
+  // Check for write failure: empty doc intentionally produces "{}" or "[]" (≥2 bytes),
+  // so bytesWritten == 0 reliably means the stream errored before writing anything.
+  // A partial write (disk full mid-stream) produces a truncated file — detect it by
+  // comparing written bytes against a fresh measureJson() result.
+  if (bytesWritten == 0 || bytesWritten != measureJson(doc)) {
+    Serial.printf("Failed to write JSON to file: %s (wrote %u of %u bytes)\n",
+                  filename, bytesWritten, measureJson(doc));
     // Try to restore from backup
     if (SPIFFS.exists(backupFilename)) {
-      SPIFFS.remove(filename); // Remove the failed file
+      SPIFFS.remove(filename); // Remove the failed/partial file
       if (SPIFFS.rename(backupFilename, filename)) {
         Serial.printf("Restored %s from backup\n", filename);
       } else {
@@ -321,7 +327,6 @@ bool writeJsonFile(const char* filename, DynamicJsonDocument& doc) {
     }
     return false;
   }
-  file.close();
   // Remove backup file after successful save
   if (SPIFFS.exists(backupFilename)) {
     SPIFFS.remove(backupFilename);
@@ -563,10 +568,11 @@ void loadWiFiCredentials() {
   if (!readJsonFile("/wifi.json", 2048, doc)) {
     return;
   }
+  // Reset count before parsing so stale data from a previous load isn't left behind
+  wifiNetworkCount = 0;
   // Handle the JSON array format [{"ssid": "name", "password": "pass"}, ...]
   if (doc.is<JsonArray>()) {
     JsonArray networks = doc.as<JsonArray>();
-    wifiNetworkCount = 0;
     // Iterate through each network object
     for (JsonObject network : networks) {
       if (wifiNetworkCount >= MAX_WIFI_NETWORKS) break;
@@ -709,8 +715,7 @@ void loadConfig() {
   // Read configuration from SPIFFS
   if (!readJsonFile("/config.json", 1024, doc)) {
     Serial.println("Config file not found, using defaults");
-    // Save the default configuration to file
-    saveConfig();
+    // Defaults are saved by setup() after display_type is validated
   } else {
     // Load configuration values, using defaults for missing values
     extractConfigFromJson(doc);
@@ -1151,19 +1156,19 @@ void handleSimpleWebPage() {
 void handleGetStreams() {
   // Yield to other tasks before processing
   yield();
-  // If playlist file doesn't exist, return a default empty one
-  if (!SPIFFS.exists("/playlist.json")) {
-    server.send(200, "application/json", "[]");
-    return;
+  // Serialize from the authoritative in-memory playlist so the response always
+  // matches what the device is actually using, even if the last SPIFFS save failed.
+  DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
+  JsonArray array = doc.to<JsonArray>();
+  for (int i = 0; i < player.getPlaylistCount(); i++) {
+    const StreamInfo& si = player.getPlaylistItem(i);
+    JsonObject item = array.createNestedObject();
+    item["name"] = si.name;
+    item["url"]  = si.url;
   }
-  File file = SPIFFS.open("/playlist.json", "r");
-  if (!file) {
-    server.send(200, "application/json", "[]");
-    return;
-  }
-  // Stream the file contents
-  server.streamFile(file, "application/json");
-  file.close();
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
   // Yield to other tasks after processing
   yield();
 }
@@ -1559,46 +1564,23 @@ void handleMixer() {
  * JSON object where keys are filenames and values are file contents.
  */
 void handleExportConfig() {
-  // Yield to other tasks before processing
   yield();
-  // List of configuration files to export
+  // Use ArduinoJson to build the export object — avoids manual comma logic and
+  // produces valid JSON regardless of which files exist.
+  DynamicJsonDocument exportDoc(8192);
   const char* configFiles[] = {"/config.json", "/wifi.json", "/playlist.json", "/player.json"};
-  // Initialize output string
-  String output = "{";
-  // Process each configuration file
   for (int i = 0; i < 4; i++) {
     const char* filename = configFiles[i];
-    // Check if file exists
-    if (SPIFFS.exists(filename)) {
-      // Open the file
-      File file = SPIFFS.open(filename, "r");
-      if (file) {
-        // Get file size
-        size_t size = file.size();
-        if (size > 0 && size < 4096) { // Reasonable size limit
-          // Allocate buffer for file content
-          std::unique_ptr<char[]> buf(new char[size + 1]);
-          if (buf) {
-            // Read file content
-            if (file.readBytes(buf.get(), size) == size) {
-              buf[size] = '\0';              
-              // Add to main document with filename as key (without leading slash)
-              output += "\n\"" + String(filename + 1) + "\":" + String(buf.get());
-              if (i < 3) output += ",";
-              // Yield to other tasks during long operations
-              yield(); 
-            }
-          }
-        }
-        file.close();
-      }
+    DynamicJsonDocument fileDoc(PLAYLIST_BUFFER_SIZE);
+    if (readJsonFile(filename, PLAYLIST_BUFFER_SIZE, fileDoc)) {
+      // Key is the filename without the leading slash
+      exportDoc[filename + 1] = fileDoc.as<JsonVariant>();
     }
+    yield();
   }
-  // Close the JSON object
-  output += "}";
-  // Send the combined JSON as response
+  String output;
+  serializeJson(exportDoc, output);
   server.send(200, "application/json", output);
-  // Yield to other tasks after processing
   delay(1);
 }
 
@@ -1634,26 +1616,22 @@ void handleImportConfig() {
     sendJsonResponse("error", "Invalid JSON format");
     return;
   }
-  // Process each configuration section
-  bool success = true;
+  // Buffer sizes matched to each file's maximum expected content
   const char* configFiles[] = {"config.json", "wifi.json", "playlist.json", "player.json"};
+  const size_t fileSizes[]   = {1024,          2048,        PLAYLIST_BUFFER_SIZE, 512};
+  bool success = true;
   for (int i = 0; i < 4; i++) {
     const char* filename = configFiles[i];
-    // Check if this section exists in the uploaded data
     if (doc.containsKey(filename)) {
-      String file = String("/") + String(filename);
-      // Create a temporary DynamicJsonDocument from the JsonVariant
-      // TODO: Optimize size based on actual content
-      // TODO: needs testing
-      DynamicJsonDocument tempDoc(1024);
+      String filePath = String("/") + filename;
+      DynamicJsonDocument tempDoc(fileSizes[i]);
       tempDoc.set(doc[filename]);
-      // Save the JSON to SPIFFS using helper function
-      if (writeJsonFile(file.c_str(), tempDoc)) {
+      if (writeJsonFile(filePath.c_str(), tempDoc)) {
         Serial.println("Saved " + String(filename) + " to SPIFFS");
       } else {
         Serial.println("Failed to save " + String(filename) + " to SPIFFS");
+        success = false;
       }
-      // Yield to other tasks during long operations
       delay(1);
     }
   }
@@ -1958,26 +1936,22 @@ bool initSPIFFS() {
   } else {
     Serial.println("SPIFFS mounted successfully");
   }
-  // Test SPIFFS write capability
-  if (!SPIFFS.exists("/spiffs_test")) {
-    // File does not exist, create it
-    Serial.println("Testing SPIFFS write capability...");
-    File testFile = SPIFFS.open("/spiffs_test", "w");
-    if (!testFile) {
-      Serial.println("ERROR: Failed to create SPIFFS test file!");
-    } else {
-      if (testFile.println("SPIFFS write test - OK")) {
-        Serial.println("SPIFFS write test successful");
-      } else {
-        Serial.println("ERROR: Failed to write to SPIFFS test file!");
-      }
-      testFile.close();
-    }
+  // Test SPIFFS write capability on every boot so a corrupted FS is caught early
+  Serial.println("Testing SPIFFS write capability...");
+  File testFile = SPIFFS.open("/spiffs_test", "w");
+  if (!testFile) {
+    Serial.println("ERROR: Failed to create SPIFFS test file!");
   } else {
-    // File exists, SPIFFS is working
-    Serial.println("SPIFFS write test file already exists - SPIFFS is working");
+    bool writeOk = testFile.println("SPIFFS write test - OK");
+    testFile.close();
+    if (writeOk) {
+      Serial.println("SPIFFS write test successful");
+      SPIFFS.remove("/spiffs_test");
+    } else {
+      Serial.println("ERROR: Failed to write to SPIFFS test file!");
+      SPIFFS.remove("/spiffs_test");
+    }
   }
-  // End the SPIFFS test
   return true;
 }
 
@@ -2218,9 +2192,14 @@ void setup() {
   // Load configuration
   loadConfig();
   
-  // Validate display type
+  // Validate display type; if config was just created from defaults, save it now
+  // so the file reflects the validated state.
+  bool configWasDefault = !SPIFFS.exists("/config.json");
   if (config.display_type < 0 || config.display_type >= getDisplayTypeCount()) {
-    config.display_type = 0; // Default to first display type
+    config.display_type = 0;
+  }
+  if (configWasDefault) {
+    saveConfig();
   }
   // Initialize LED pin if configured
   if (config.led_pin >= 0) {
