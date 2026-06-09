@@ -24,7 +24,7 @@
 
 // Constants for StreamInfo field sizes
 #define STREAM_NAME_SIZE 96
-#define STREAM_URL_SIZE 128
+#define STREAM_URL_SIZE 256   // Must be >= StreamInfoData::url[256] so URLs are never silently truncated
 
 // Helper macro for safe string copying with null termination
 #define SAFE_STRNCPY(dest, src, size) \
@@ -43,28 +43,23 @@ class Playlist {
 private:
   StreamInfo playlist[MAX_PLAYLIST_SIZE];
   int count;
-  int current;
-  
+
 public:
   // Constructor
   Playlist();
-  
+
   // Playlist management methods
   void load();
   void save();
   void setItem(int index, const char* name, const char* url);
-  void addItem(const char* name, const char* url);
+  bool addItem(const char* name, const char* url);
   void removeItem(int index);
   void clear();
-  
+
   // Getters
   int getCount() const;
-  int getCurrent() const;
   const StreamInfo& getItem(int index) const;
 
-  // Setters
-  void setCurrent(int index);
-  
   // Utility methods
   void validate();
 };

@@ -282,8 +282,8 @@ void Player::setPlaylistItem(int index, const char* name, const char* url) {
  * @param url Stream URL
  * Delegates to the playlist object's addItem method
  */
-void Player::addPlaylistItem(const char* name, const char* url) {
-  playlist->addItem(name, url);
+bool Player::addPlaylistItem(const char* name, const char* url) {
+  return playlist->addItem(name, url);
 }
 
 /**
@@ -293,6 +293,16 @@ void Player::addPlaylistItem(const char* name, const char* url) {
  */
 void Player::removePlaylistItem(int index) {
   playlist->removeItem(index);
+  // Keep playlistIndex pointing at the same logical stream after removal.
+  // If the removed entry was before the current index, shift down by one.
+  // If it was the current entry (or the list is now empty), clamp to 0.
+  if (playlist->getCount() == 0) {
+    playerState.playlistIndex = -1;
+  } else if (index < playerState.playlistIndex) {
+    playerState.playlistIndex--;
+  } else if (playerState.playlistIndex >= playlist->getCount()) {
+    playerState.playlistIndex = playlist->getCount() - 1;
+  }
 }
 
 /**
@@ -335,14 +345,9 @@ int Player::getNextPlaylistItem() const {
  * @return Previous playlist item index
  */
 int Player::getPrevPlaylistItem() const {
-  if (playlist->getCount() <= 0) {
-    // No items
-    return -1;
-  }
-  // Do not wrap over
-  if (playerState.playlistIndex <= 0) {
-    return 0;
-  }
+  int n = playlist->getCount();
+  if (n <= 0) return -1;
+  if (playerState.playlistIndex <= 0) return n - 1;  // wrap to last
   return playerState.playlistIndex - 1;
 }
 
@@ -353,7 +358,9 @@ int Player::getPrevPlaylistItem() const {
  * @return true if playlist index is valid, false otherwise
  */
 bool Player::isPlaylistIndexValid() const {
-  return (playlist->getCount() > 0 && playerState.playlistIndex < playlist->getCount());
+  return (playlist->getCount() > 0 &&
+          playerState.playlistIndex >= 0 &&
+          playerState.playlistIndex < playlist->getCount());
 }
 
 /**

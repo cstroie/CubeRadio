@@ -1202,41 +1202,35 @@ void handlePostStreams() {
     sendJsonResponse("error", "JSON root must be an array");
     return;
   }
-  // Get the array
   JsonArray array = doc.as<JsonArray>();
-  // Validate array size
   if (array.size() > MAX_PLAYLIST_SIZE) {
     sendJsonResponse("error", "Playlist exceeds maximum size");
     return;
   }
-  // Clear existing playlist
-  player.clearPlaylist();
-  // Process each item in the array
+  // Validate the entire incoming array BEFORE touching the in-memory playlist.
+  // Clearing first and then aborting on a bad entry would leave the playlist destroyed.
   for (JsonObject item : array) {
-    // Validate required fields
     if (!item.containsKey("name") || !item.containsKey("url")) {
       sendJsonResponse("error", "Each item must have 'name' and 'url' fields");
       return;
     }
-    // Extract name and url
     const char* name = item["name"];
-    const char* url = item["url"];
-    // Validate data
+    const char* url  = item["url"];
     if (!name || !url || strlen(name) == 0 || strlen(url) == 0) {
       sendJsonResponse("error", "Name and URL cannot be empty");
       return;
     }
-    // Validate URL format
     if (!VALIDATE_URL(url)) {
       sendJsonResponse("error", "Invalid URL format");
       return;
     }
-    // Add to playlist
-    player.addPlaylistItem(name, url);
   }
-  // Save to SPIFFS
+  // All entries valid — now replace the in-memory playlist
+  player.clearPlaylist();
+  for (JsonObject item : array) {
+    player.addPlaylistItem(item["name"], item["url"]);
+  }
   player.savePlaylist();
-  // Send success response
   sendJsonResponse("success", "Playlist updated successfully");
 }
 

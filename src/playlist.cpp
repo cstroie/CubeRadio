@@ -28,8 +28,6 @@ extern bool writeJsonFile(const char* filename, DynamicJsonDocument& doc);
  */
 Playlist::Playlist() {
   count = 0;
-  current = 0;
-  // Initialize playlist
   for (int i = 0; i < MAX_PLAYLIST_SIZE; i++) {
     playlist[i].name[0] = '\0';
     playlist[i].url[0] = '\0';
@@ -43,40 +41,29 @@ Playlist::Playlist() {
  * If the playlist file is corrupted, it creates a backup and a new empty playlist.
  */
 void Playlist::load() {
-  count = 0;  // Reset playlist count
-  // Load playlist using helper function
+  count = 0;
   DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
   if (!readJsonFile("/playlist.json", PLAYLIST_BUFFER_SIZE, doc)) {
     Serial.println("Failed to load playlist, continuing with empty playlist");
     return;
   }
-  // Check if the JSON document is an array
   if (!doc.is<JsonArray>()) {
-    Serial.println("Error: Playlist JSON is not an array");
-    // Don't create an empty playlist, just return with empty playlist
-    Serial.println("Continuing with empty playlist");
+    Serial.println("Error: Playlist JSON is not an array, continuing with empty playlist");
     return;
   }
-  // Populate the playlist array
   JsonArray array = doc.as<JsonArray>();
-  count = 0;
-  // Iterate through the JSON array
   for (JsonObject item : array) {
     if (count >= MAX_PLAYLIST_SIZE) {
       Serial.println("Warning: Playlist limit reached (20 entries)");
       break;
     }
-    // Check if the item has the required keys
     if (item.containsKey("name") && item.containsKey("url")) {
       const char* name = item["name"];
-      const char* url = item["url"];
-      // Validate name and URL
+      const char* url  = item["url"];
       if (name && url && strlen(name) > 0 && strlen(url) > 0) {
-        // Validate URL format
         if (VALIDATE_URL(url)) {
-          // Add item to playlist
           SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);
-          SAFE_STRNCPY(playlist[count].url, url, STREAM_URL_SIZE);
+          SAFE_STRNCPY(playlist[count].url,  url,  STREAM_URL_SIZE);
           count++;
         } else {
           Serial.println("Warning: Skipping stream with invalid URL format");
@@ -86,17 +73,11 @@ void Playlist::load() {
       }
     }
   }
-  // Check if any valid streams were loaded
   if (count == 0) {
-    Serial.println("Error: No valid streams found in playlist");
-    // Don't create an empty playlist, just return with empty playlist
-    Serial.println("Continuing with empty playlist");
+    Serial.println("No valid streams found in playlist");
   } else {
-    Serial.print("Loaded ");
-    Serial.print(count);
-    Serial.println(" streams from playlist");
+    Serial.printf("Loaded %d streams from playlist\n", count);
   }
-  // Validate playlist integrity after loading
   validate();
 }
 
@@ -139,17 +120,17 @@ void Playlist::save() {
  * @param url Stream URL
  */
 void Playlist::setItem(int index, const char* name, const char* url) {
-  if (index >= 0 && index < MAX_PLAYLIST_SIZE && name && url) {
-    // Validate URL format before setting
-    if (strlen(url) == 0 || !VALIDATE_URL(url)) {
-      Serial.println("Warning: Skipping stream with invalid URL format in setItem");
-      return;
-    }
-    SAFE_STRNCPY(playlist[index].name, name, STREAM_NAME_SIZE);
-    SAFE_STRNCPY(playlist[index].url, url, STREAM_URL_SIZE);
-    if (index >= count) {
-      count = index + 1;
-    }
+  // Only allow indices within the already-populated range or the next append slot.
+  // Allowing index > count would create uninitialised sparse slots.
+  if (index < 0 || index > count || index >= MAX_PLAYLIST_SIZE || !name || !url) return;
+  if (strlen(url) == 0 || !VALIDATE_URL(url)) {
+    Serial.println("Warning: Skipping stream with invalid URL format in setItem");
+    return;
+  }
+  SAFE_STRNCPY(playlist[index].name, name, STREAM_NAME_SIZE);
+  SAFE_STRNCPY(playlist[index].url,  url,  STREAM_URL_SIZE);
+  if (index == count) {
+    count++;
   }
 }
 
@@ -158,17 +139,19 @@ void Playlist::setItem(int index, const char* name, const char* url) {
  * @param name Stream name
  * @param url Stream URL
  */
-void Playlist::addItem(const char* name, const char* url) {
-  if (count < MAX_PLAYLIST_SIZE && name && url) {
-    // Validate URL format before adding
-    if (strlen(url) == 0 || !VALIDATE_URL(url)) {
-      Serial.println("Warning: Skipping stream with invalid URL format in addItem");
-      return;
-    }
-    SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);
-    SAFE_STRNCPY(playlist[count].url, url, STREAM_URL_SIZE);
-    count++;
+bool Playlist::addItem(const char* name, const char* url) {
+  if (count >= MAX_PLAYLIST_SIZE) {
+    Serial.println("Warning: Playlist full, cannot add item");
+    return false;
   }
+  if (!name || !url || strlen(url) == 0 || !VALIDATE_URL(url)) {
+    Serial.println("Warning: Skipping stream with invalid URL format in addItem");
+    return false;
+  }
+  SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);
+  SAFE_STRNCPY(playlist[count].url,  url,  STREAM_URL_SIZE);
+  count++;
+  return true;
 }
 
 /**
@@ -198,7 +181,6 @@ void Playlist::clear() {
     playlist[i].url[0] = '\0';
   }
   count = 0;
-  current = 0;
 }
 
 /**
@@ -213,10 +195,6 @@ int Playlist::getCount() const {
  * @brief Get the current playlist index
  * @return Current selected playlist index
  */
-int Playlist::getCurrent() const {
-  return current;
-}
-
 /**
  * @brief Get playlist item at specific index
  * @param index Playlist index (0-based)
@@ -234,22 +212,13 @@ const StreamInfo& Playlist::getItem(int index) const {
  * @brief Set the current playlist index
  * @param index New current index (0-based)
  */
-void Playlist::setCurrent(int index) {
-  current = index;
-}
-
 /**
  * @brief Validate playlist integrity
  * Ensures playlist count and selection are within valid ranges
  */
 void Playlist::validate() {
-  // Validate playlist count
   if (count < 0 || count > MAX_PLAYLIST_SIZE) {
     Serial.println("Warning: Invalid playlist count detected, resetting to 0");
     count = 0;
-  }
-  // Validate current selection
-  if (current < 0 || current >= count) {
-    current = 0;
   }
 }

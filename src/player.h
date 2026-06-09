@@ -145,7 +145,7 @@ public:
   void loadPlaylist();
   void savePlaylist();
   void setPlaylistItem(int index, const char* name, const char* url);
-  void addPlaylistItem(const char* name, const char* url);
+  bool addPlaylistItem(const char* name, const char* url);
   void removePlaylistItem(int index);
   void clearPlaylist();
 
