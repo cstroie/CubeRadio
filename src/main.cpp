@@ -60,6 +60,8 @@ TouchButton* touchPrev = nullptr;
 
 // Flag to indicate board button press
 static volatile bool boardButtonPressed = false;
+// Flag set by audio callbacks (core 0) to request display+status update on core 1
+static volatile bool pendingCallbackUpdate = false;
 
 // MPD Interface instance
 MPDInterface mpdInterface(mpdServer, player);
@@ -99,8 +101,7 @@ void audio_showstreamtitle(const char *info) {
     Serial.println(info);
     if (strcmp(player.getStreamTitle(), info) != 0) {
       player.setStreamTitle(info);
-      updateDisplay();
-      sendStatusToClients();
+      pendingCallbackUpdate = true;
     }
   }
 }
@@ -116,8 +117,7 @@ void audio_showstation(const char *info) {
     Serial.println(info);
     if (strcmp(player.getStreamName(), info) != 0) {
       player.setStreamName(info);
-      updateDisplay();
-      sendStatusToClients();
+      pendingCallbackUpdate = true;
     }
   }
 }
@@ -134,8 +134,7 @@ void audio_bitrate(const char *info) {
     int newBitrate = atoi(info) / 1000;
     if (newBitrate > 0 && newBitrate != player.getBitrate()) {
       player.setBitrate(newBitrate);
-      updateDisplay();
-      sendStatusToClients();
+      pendingCallbackUpdate = true;
     }
   }
 }
@@ -175,7 +174,7 @@ void audio_info(const char *info) {
       player.setStreamIconUrl(iconUrl);
       Serial.print("Cover image URL: ");
       Serial.println(player.getStreamIconUrl());
-      sendStatusToClients();
+      pendingCallbackUpdate = true;
     }
   }
 }
@@ -190,7 +189,7 @@ void audio_icyurl(const char *info) {
     Serial.print("ICY URL: ");
     Serial.println(info);
     player.setStreamIcyUrl(info);
-    sendStatusToClients();
+    pendingCallbackUpdate = true;
   }
 }
 
@@ -221,17 +220,24 @@ void audio_id3data(const char *info) {
 void audio_eof_stream(const char *info) {
   Serial.print("Stream ended: ");
   Serial.println(info ? info : "");
+  // Accumulate play time while still on core 0 (all atomic ops)
+  if (player.getPlayStartTime() > 0) {
+    player.addPlayTime((millis() - player.getPlayStartTime()) / 1000);
+    player.setPlayStartTime(0);
+    player.setDirty();
+  }
   player.setPlaying(false);
-  updateDisplay();
-  sendStatusToClients();
+  if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
+  // Defer display/WebSocket update to main loop (core 1)
+  pendingCallbackUpdate = true;
 }
 
 void audio_error_on_connect(const char *info) {
   Serial.print("Audio connection error: ");
   Serial.println(info ? info : "");
   player.setPlaying(false);
-  updateDisplay();
-  sendStatusToClients();
+  if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
+  pendingCallbackUpdate = true;
 }
 
 
@@ -2100,6 +2106,15 @@ bool connectToWiFi() {
  * This is the main application loop that runs continuously after setup()
  */
 void loop() {
+  // Drain updates requested by audio callbacks running on core 0.
+  // updateDisplay() and sendStatusToClients() are not multicore-safe, so
+  // callbacks only set this flag and the main loop does the actual work.
+  if (pendingCallbackUpdate) {
+    pendingCallbackUpdate = false;
+    updateDisplay();
+    sendStatusToClients();
+  }
+
   ArduinoOTA.handle();           // Handle OTA updates
   server.handleClient();         // Process incoming web requests
   webSocket.loop();              // Process WebSocket events
@@ -2284,14 +2299,22 @@ void setup() {
   #endif
   
   // Setup audio output with error handling
-  Audio* audio = player.setupAudioOutput();
+  player.setupAudioOutput();
   // Setup rotary encoder with error handling
   setupRotaryEncoder();
   // Load playlist with error recovery
   player.loadPlaylist();
   // Validate loaded playlist
   player.getPlaylist()->validate();
-  // Load player state
+  // Start audio task before loadPlayerState() so that connecttohost() called
+  // during stream resume has audio->loop() running to drain the socket.
+  BaseType_t result = xTaskCreatePinnedToCore(audioTask, "AudioTask", 8192, NULL, 5, &audioTaskHandle, 0);
+  if (result != pdPASS) {
+    Serial.println("ERROR: Failed to create AudioTask");
+  } else {
+    Serial.println("AudioTask created successfully");
+  }
+  // Load player state (may call startStream if previously playing)
   player.loadPlayerState();
   if (player.isPlaying()) {
     // Update activity time to prevent display from timing out immediately
@@ -2346,13 +2369,6 @@ void setup() {
   // Start ArduinoOTA
   ArduinoOTA.begin();
   Serial.println("ArduinoOTA ready");
-  // Create audio task on core 0 with error checking
-  BaseType_t result = xTaskCreatePinnedToCore(audioTask, "AudioTask", 4096, NULL, 5, &audioTaskHandle, 0);
-  if (result != pdPASS) {
-    Serial.println("ERROR: Failed to create AudioTask");
-  } else {
-    Serial.println("AudioTask created successfully");
-  }
-    // Update display
+  // Update display
   updateDisplay();
 }

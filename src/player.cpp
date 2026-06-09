@@ -102,12 +102,14 @@ void Player::setTone(int bass, int mid, int treble) {
  * @param url New stream URL
  */
 void Player::setStreamUrl(const char* url) {
+  taskENTER_CRITICAL(&spinlock);
   if (url) {
     strncpy(streamInfo.url, url, sizeof(streamInfo.url) - 1);
     streamInfo.url[sizeof(streamInfo.url) - 1] = '\0';
   } else {
     streamInfo.url[0] = '\0';
   }
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -115,12 +117,14 @@ void Player::setStreamUrl(const char* url) {
  * @param name New stream name
  */
 void Player::setStreamName(const char* name) {
+  taskENTER_CRITICAL(&spinlock);
   if (name) {
     strncpy(streamInfo.name, name, sizeof(streamInfo.name) - 1);
     streamInfo.name[sizeof(streamInfo.name) - 1] = '\0';
   } else {
     streamInfo.name[0] = '\0';
   }
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -128,12 +132,14 @@ void Player::setStreamName(const char* name) {
  * @param title New stream title
  */
 void Player::setStreamTitle(const char* title) {
+  taskENTER_CRITICAL(&spinlock);
   if (title) {
     strncpy(streamInfo.title, title, sizeof(streamInfo.title) - 1);
     streamInfo.title[sizeof(streamInfo.title) - 1] = '\0';
   } else {
     streamInfo.title[0] = '\0';
   }
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -141,12 +147,14 @@ void Player::setStreamTitle(const char* title) {
  * @param icyUrl New stream ICY URL
  */
 void Player::setStreamIcyUrl(const char* icyUrl) {
+  taskENTER_CRITICAL(&spinlock);
   if (icyUrl) {
     strncpy(streamInfo.icyUrl, icyUrl, sizeof(streamInfo.icyUrl) - 1);
     streamInfo.icyUrl[sizeof(streamInfo.icyUrl) - 1] = '\0';
   } else {
     streamInfo.icyUrl[0] = '\0';
   }
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -154,12 +162,14 @@ void Player::setStreamIcyUrl(const char* icyUrl) {
  * @param iconUrl New stream icon URL
  */
 void Player::setStreamIconUrl(const char* iconUrl) {
+  taskENTER_CRITICAL(&spinlock);
   if (iconUrl) {
     strncpy(streamInfo.iconUrl, iconUrl, sizeof(streamInfo.iconUrl) - 1);
     streamInfo.iconUrl[sizeof(streamInfo.iconUrl) - 1] = '\0';
   } else {
     streamInfo.iconUrl[0] = '\0';
   }
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -552,8 +562,6 @@ void Player::handleAudio() {
   if (audio) {
     audio->loop();
   }
-  // Add yield to prevent blocking
-  yield();
 }
 
 /**
