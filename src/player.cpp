@@ -184,7 +184,7 @@ void Player::clearPlayerState() {
   playerState.bass = 0;
   playerState.mid = 0;
   playerState.treble = 0;
-  playerState.playlistIndex = 0;
+  playerState.playlistIndex = -1;
   playerState.lastSaveTime = 0;
   playerState.dirty = false;
   playerState.playStartTime = 0;
@@ -202,7 +202,7 @@ void Player::loadPlayerState() {
     playerState.bass = doc["bass"] | 0;
     playerState.mid = doc["mid"] | 0;
     playerState.treble = doc["treble"] | 0;
-    playerState.playlistIndex = doc["playlistIndex"] | 0;
+    setPlaylistIndex(doc["playlistIndex"] | -1);
     playerState.totalPlayTime = doc["totalPlayTime"] | 0UL;
     Serial.println("Loaded player state from SPIFFS");
   } else {
@@ -425,15 +425,14 @@ void Player::startStream(const char* url, const char* name) {
       return;
     }
   }
-  // Validate inputs
-  if (!url || !name) {
-    Serial.println("Error: NULL stream URL or name pointer passed to startStream");
+  // Validate URL pointer (name was already defaulted above if needed)
+  if (!url) {
+    Serial.println("Error: NULL stream URL pointer passed to startStream");
     return;
   }
-  // Check for empty strings
-  if (strlen(url) == 0 || strlen(name) == 0) {
-    Serial.println("Error: Empty stream URL or name passed to startStream");
-    return;
+  // Allow empty name — use fallback
+  if (!name || strlen(name) == 0) {
+    name = "Unknown Station";
   }
   // Validate URL format
   if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
@@ -447,25 +446,28 @@ void Player::startStream(const char* url, const char* name) {
     strncpy(streamInfo.name, name, sizeof(streamInfo.name) - 1);
     streamInfo.name[sizeof(streamInfo.name) - 1] = '\0';
   }
-  // Set playback status to playing
-  playerState.playing = true;
-  // Track play time
-  playerState.playStartTime = millis() / 1000;  // Store in seconds
   // Turn on LED when playing (if LED pin is configured)
   if (config.led_pin >= 0) {
     digitalWrite(config.led_pin, HIGH);
   }
-  // Use ESP32-audioI2S to play the stream
+  // Use ESP32-audioI2S to play the stream; only set playing on confirmed connect
   if (audio) {
     bool audioConnected = audio->connecttohost(url);
     if (!audioConnected) {
       Serial.println("Error: Failed to connect to audio stream");
       playerState.playing = false;
       clearStreamInfo();
+      if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
     } else {
       playerState.playing = true;
+      // Track play time (store raw millis so subtraction wraps safely)
+      playerState.playStartTime = millis();
       Serial.println("Successfully connected to audio stream");
     }
+  } else {
+    Serial.println("Error: Audio not initialised, cannot start stream");
+    playerState.playing = false;
+    if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
   }
   updateDisplay();        // Refresh the display with new playback info
   sendStatusToClients();  // Notify clients of status change
@@ -487,8 +489,9 @@ void Player::stopStream() {
   clearStreamInfo();
   // Update total play time when stopping
   if (playerState.playStartTime > 0) {
-    playerState.totalPlayTime += (millis() / 1000) - playerState.playStartTime;
+    playerState.totalPlayTime += (millis() - playerState.playStartTime) / 1000;
     playerState.playStartTime = 0;
+    setDirty();
   }
   // Turn off LED when stopped (if LED pin is configured)
   if (config.led_pin >= 0) {
