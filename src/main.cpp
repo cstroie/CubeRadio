@@ -97,9 +97,9 @@ void audio_showstreamtitle(const char *info) {
   if (info && strlen(info) > 0) {
     Serial.print("Stream title: ");
     Serial.println(info);
-    // Update stream title if it has changed
     if (strcmp(player.getStreamTitle(), info) != 0) {
       player.setStreamTitle(info);
+      updateDisplay();
       sendStatusToClients();
     }
   }
@@ -114,9 +114,9 @@ void audio_showstation(const char *info) {
   if (info && strlen(info) > 0) {
     Serial.print("Station name: ");
     Serial.println(info);
-    // Update current stream name if it has changed and we're not already using a custom name
     if (strcmp(player.getStreamName(), info) != 0) {
       player.setStreamName(info);
+      updateDisplay();
       sendStatusToClients();
     }
   }
@@ -131,11 +131,11 @@ void audio_bitrate(const char *info) {
   if (info && strlen(info) > 0) {
     Serial.print("Bitrate: ");
     Serial.println(info);
-    // Convert string to integer bitrate and convert to kbps (divide by 1000)
     int newBitrate = atoi(info) / 1000;
-    // Update bitrate if it has changed
     if (newBitrate > 0 && newBitrate != player.getBitrate()) {
       player.setBitrate(newBitrate);
+      updateDisplay();
+      sendStatusToClients();
     }
   }
 }
@@ -146,32 +146,36 @@ void audio_bitrate(const char *info) {
  * @param info Pointer to the audio information
  */
 void audio_info(const char *info) {
-  if (info && strlen(info) > 0) {
-    Serial.print("Audio Info: ");
-    Serial.println(info);
-    // Check if the info contains StreamUrl=
-    String infoStr = String(info);
-    if (infoStr.startsWith("StreamUrl=")) {
-      // Extract the URL part after "StreamUrl="
-      String urlPart = infoStr.substring(10); // Skip "StreamUrl="
-      // Remove quotes or double quotes if present
-      if (urlPart.startsWith("\"") && urlPart.endsWith("\"") && urlPart.length() >= 2) {
-        urlPart = urlPart.substring(1, urlPart.length() - 1);
-      } else if (urlPart.startsWith("'") && urlPart.endsWith("'") && urlPart.length() >= 2) {
-        urlPart = urlPart.substring(1, urlPart.length() - 1);
-      }
-      // Check if the URL ends with common image extensions
-      if (urlPart.endsWith(".png") ||
-          urlPart.endsWith(".jpg") ||
-          urlPart.endsWith(".jpeg") ||
-          urlPart.endsWith(".ico")) {
-        // Store the cover image URL
-        player.setStreamIconUrl(urlPart.c_str());
-        Serial.print("Cover image URL: ");
-        Serial.println(player.getStreamIconUrl());
-        // Notify clients of the new cover image
-        sendStatusToClients();
-      }
+  if (!info || strlen(info) == 0) return;
+  Serial.print("Audio Info: ");
+  Serial.println(info);
+  // Parse StreamUrl= without heap-allocating String objects
+  if (strncmp(info, "StreamUrl=", 10) == 0) {
+    const char* urlPart = info + 10;
+    size_t len = strlen(urlPart);
+    // Strip surrounding quotes (single or double)
+    if (len >= 2 &&
+        ((urlPart[0] == '"' && urlPart[len - 1] == '"') ||
+         (urlPart[0] == '\'' && urlPart[len - 1] == '\''))) {
+      urlPart++;
+      len -= 2;
+    }
+    // Check for image extensions by inspecting the tail
+    bool isImage = (len > 4) &&
+      (strncasecmp(urlPart + len - 4, ".png",  4) == 0 ||
+       strncasecmp(urlPart + len - 4, ".jpg",  4) == 0 ||
+       strncasecmp(urlPart + len - 4, ".ico",  4) == 0 ||
+       (len > 5 && strncasecmp(urlPart + len - 5, ".jpeg", 5) == 0));
+    if (isImage) {
+      // Copy into a null-terminated buffer (urlPart may not be null-terminated after advancing)
+      char iconUrl[256];
+      size_t copy = (len < sizeof(iconUrl) - 1) ? len : sizeof(iconUrl) - 1;
+      strncpy(iconUrl, urlPart, copy);
+      iconUrl[copy] = '\0';
+      player.setStreamIconUrl(iconUrl);
+      Serial.print("Cover image URL: ");
+      Serial.println(player.getStreamIconUrl());
+      sendStatusToClients();
     }
   }
 }
@@ -186,6 +190,7 @@ void audio_icyurl(const char *info) {
     Serial.print("ICY URL: ");
     Serial.println(info);
     player.setStreamIcyUrl(info);
+    sendStatusToClients();
   }
 }
 
@@ -211,6 +216,22 @@ void audio_id3data(const char *info) {
     Serial.print("ID3 Data: ");
     Serial.println(info);
   }
+}
+
+void audio_eof_stream(const char *info) {
+  Serial.print("Stream ended: ");
+  Serial.println(info ? info : "");
+  player.setPlaying(false);
+  updateDisplay();
+  sendStatusToClients();
+}
+
+void audio_error_on_connect(const char *info) {
+  Serial.print("Audio connection error: ");
+  Serial.println(info ? info : "");
+  player.setPlaying(false);
+  updateDisplay();
+  sendStatusToClients();
 }
 
 
