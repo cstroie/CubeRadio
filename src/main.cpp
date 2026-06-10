@@ -2080,6 +2080,33 @@ void setupWebServer() {
 }
 
 
+// Tracks whether the soft-AP is currently running. The AP is an open
+// (passwordless) network, so it exposes the whole control surface to anyone
+// in range; keep it up only as a fallback when STA is not connected.
+static bool apActive = false;
+
+/**
+ * @brief Bring the soft-AP up or down to match STA connection state
+ * @param wantAP true to ensure the AP is running, false to shut it down
+ */
+void manageAccessPoint(bool wantAP) {
+  if (wantAP && !apActive) {
+    Serial.println("Starting Access Point mode...");
+    if (WiFi.softAP("CubeRadio")) {
+      apActive = true;
+      Serial.print("AP IP Address: ");
+      Serial.println(WiFi.softAPIP().toString());
+      display->showStatus("AP Mode Active", "CubeRadio", WiFi.softAPIP().toString());
+    } else {
+      Serial.println("Failed to start Access Point");
+    }
+  } else if (!wantAP && apActive) {
+    Serial.println("STA connected, shutting down Access Point");
+    WiFi.softAPdisconnect(true);
+    apActive = false;
+  }
+}
+
 /**
  * @brief Connect to WiFi networks
  * Handles connection to configured WiFi networks with scanning and fallback to AP mode
@@ -2252,6 +2279,8 @@ void loop() {
     if (wifiNetworkCount > 0 && WiFi.status() != WL_CONNECTED) {
       connectToWiFi();
     }
+    // Keep the fallback AP up only while STA is down
+    manageAccessPoint(WiFi.status() != WL_CONNECTED);
   }
 
   // Hourly heap telemetry: makes slow fragmentation/leaks visible in the
@@ -2362,21 +2391,10 @@ void setup() {
   // Load WiFi credentials with error recovery
   loadWiFiCredentials();
   // Connect to WiFi with error handling
-  connectToWiFi();
-  // Always start AP mode as a control mechanism
-  Serial.println("Starting Access Point mode...");
-  display->showStatus("Starting AP Mode", "", "");
-  
-  // Start WiFi access point mode with error handling
-  if (WiFi.softAP("CubeRadio")) {
-    Serial.println("Access Point Started");
-    Serial.print("AP IP Address: ");
-    Serial.println(WiFi.softAPIP().toString());
-    display->showStatus("AP Mode Active", "CubeRadio", WiFi.softAPIP().toString());
-  } else {
-    Serial.println("Failed to start Access Point");
-    display->showStatus("AP Start Failed", "", "");
-  }
+  bool staConnected = connectToWiFi();
+  // Start the open AP only as a fallback when not connected to home WiFi;
+  // it is brought up/down dynamically as STA state changes (see loop())
+  manageAccessPoint(!staConnected);
 
   // Start mDNS responder (CubeRadio.local)
   if (MDNS.begin("CubeRadio")) {
