@@ -3203,22 +3203,21 @@ function scanNetworks() {
         if (network.rssi > -60) signalClass = "signal-strong";
         else if (network.rssi > -70) signalClass = "signal-medium";
 
-        if (isConfigured) {
-          networkDiv.classList.add("configured-network");
-          networkDiv.innerHTML = `
-                        <div class="configured-marker">★</div>
-                        <div class="network-name">${network.ssid}</div>
+        // SSID comes from a broadcast beacon and is fully attacker-controlled,
+        // so escape it for display and bind the handler in JS rather than
+        // interpolating it into an onclick string (XSS).
+        const safeSsid = escapeHtml(network.ssid);
+        const marker = isConfigured ? "★" : "";
+        const btnClass = isConfigured ? "btn-small secondary" : "btn-small";
+        const btnLabel = isConfigured ? "Reconfigure" : "Select";
+        if (isConfigured) networkDiv.classList.add("configured-network");
+        networkDiv.innerHTML = `
+                        <div class="configured-marker">${marker}</div>
+                        <div class="network-name">${safeSsid}</div>
                         <div class="network-rssi ${signalClass}">${network.rssi} dBm</div>
-                        <button class="btn-small secondary" onclick="selectNetwork('${network.ssid}')">Reconfigure</button>
+                        <button class="${btnClass}">${btnLabel}</button>
                     `;
-        } else {
-          networkDiv.innerHTML = `
-                        <div class="configured-marker"></div>
-                        <div class="network-name">${network.ssid}</div>
-                        <div class="network-rssi ${signalClass}">${network.rssi} dBm</div>
-                        <button class="btn-small" onclick="selectNetwork('${network.ssid}')">Select</button>
-                    `;
-        }
+        networkDiv.querySelector("button").addEventListener("click", () => selectNetwork(network.ssid));
 
         networksList.appendChild(networkDiv);
       });
