@@ -138,7 +138,8 @@ Physical controls:
 2. `Player::startStream(url, name)` validates URL (must be `http://` or `https://`)
 3. `audio->connecttohost(url)` — ESP32-audioI2S opens TCP, issues HTTP GET
 4. Audio task (core 0) calls `audio->loop()` every 1 ms: buffer → decode → I2S
-5. Library fires callbacks in main context:
+5. Library fires callbacks on core 0 (inside `audio->loop()`); they only use
+   spinlocked setters and set a flag the main loop drains:
    - `audio_showstreamtitle()` → `playerState.streamTitle`
    - `audio_showstation()` → `playerState.streamName`
    - `audio_bitrate()` → `playerState.bitrate` (bps → kbps)
@@ -235,7 +236,7 @@ Command lists buffer up to 20 commands; safety cap at 50 to prevent memory exhau
 | Main loop | 1 | default | 150 ms |
 | Audio task | 0 | 5 | 1 ms (`vTaskDelay`) |
 
-Shared `PlayerState` protected by `portMUX_TYPE spinlock`. Audio callbacks run in the main-loop context. `yield()` calls prevent watchdog timeouts in long operations.
+Shared `PlayerState` protected by `portMUX_TYPE spinlock`. Audio callbacks run on core 0 inside `audio->loop()`; they must only use spinlocked setters and defer display/WebSocket work to the main loop via a flag. `yield()` calls prevent watchdog timeouts in long operations.
 
 ---
 
@@ -258,9 +259,9 @@ Shared `PlayerState` protected by `portMUX_TYPE spinlock`. Audio callbacks run i
 
 | Function | GPIO |
 |----------|------|
-| I2S DOUT | 25 |
+| I2S DOUT | 26 |
 | I2S BCLK | 27 |
-| I2S LRC | 26 |
+| I2S LRC | 25 |
 | OLED SDA | 21 |
 | OLED SCL | 22 |
 | Rotary CLK | 18 |
