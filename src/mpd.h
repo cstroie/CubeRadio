@@ -78,6 +78,7 @@ private:
 
   // Asynchronous command handling buffer for non-blocking processing
   String commandBuffer = "";         ///< Buffer for accumulating incoming commands
+  bool discardingCommand = false;    ///< Discarding the rest of an oversized command line
   
   // Supported MPD commands list
   std::vector<std::string> supportedCommands;

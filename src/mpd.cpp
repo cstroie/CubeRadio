@@ -1647,6 +1647,7 @@ void MPDInterface::handleClient() {
         commandListCount = 0;
         inIdleMode = false;
         commandBuffer = "";
+        discardingCommand = false;
         return;
     }
     // Handle new client connections
@@ -1681,6 +1682,7 @@ void MPDInterface::handleClient() {
         commandListCount = 0;
         inIdleMode = false;
         commandBuffer = "";
+        discardingCommand = false;
     }
     // Process client if connected
     if (mpdClient && mpdClient.connected()) {
@@ -1841,6 +1843,12 @@ void MPDInterface::handleAsyncCommands() {
     while (mpdClient.available()) {
         char c = mpdClient.read();
         if (c == '\n') {
+            // An oversized command was being discarded; resume normally
+            if (discardingCommand) {
+                discardingCommand = false;
+                commandBuffer = "";
+                continue;
+            }
             // Process complete command
             String command = commandBuffer;
             command.trim();
@@ -1857,8 +1865,16 @@ void MPDInterface::handleAsyncCommands() {
                 }
             }
             break; // Process one command at a time to avoid blocking
-        } else {
-            commandBuffer += c;
+        } else if (!discardingCommand) {
+            // Cap the buffer so a client sending data without newlines
+            // cannot exhaust the heap; discard the rest of the line
+            if (commandBuffer.length() >= 512) {
+                commandBuffer = "";
+                discardingCommand = true;
+                mpdClient.print(mpdResponseError("", "Command too long"));
+            } else {
+                commandBuffer += c;
+            }
         }
     }
 }
