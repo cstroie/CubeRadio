@@ -1762,18 +1762,28 @@ void MPDInterface::handleIdleMode() {
     inIdleMode = false;
     return;
   }
-  // Check if there's data available (for noidle command)
-  if (mpdClient && mpdClient.connected() && mpdClient.available()) {
-    String command = mpdClient.readStringUntil('\n');
+  // Check if there's data available (for noidle command). Accumulate
+  // characters non-blockingly: readStringUntil() would stall the main loop
+  // for up to the 1 s stream timeout on a partial line.
+  while (mpdClient && mpdClient.connected() && mpdClient.available()) {
+    char c = mpdClient.read();
+    if (c != '\n') {
+      // Reuse the async command buffer; same overflow cap as normal mode
+      if (commandBuffer.length() < 512) {
+        commandBuffer += c;
+      }
+      continue;
+    }
+    String command = commandBuffer;
+    commandBuffer = "";
     command.trim();
     Serial.println("MPD Command: " + command);
     // Handle noidle command to exit idle mode
     if (command == "noidle") {
       inIdleMode = false;
-      if (mpdClient && mpdClient.connected()) {
-          mpdClient.print(mpdResponseOK());
-      }
+      mpdClient.print(mpdResponseOK());
     }
+    break; // Process one command at a time
   }
 }
 /**
