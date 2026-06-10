@@ -1712,16 +1712,21 @@ void handleImportConfig() {
  */
 String generateStatusJSON(bool fullStatus) {
   // Create JSON document with appropriate size
-  DynamicJsonDocument doc(512);
+  // Sized for copies of the snapshot strings (url/icyUrl/iconUrl up to 256 each)
+  DynamicJsonDocument doc(1536);
   if (fullStatus) {
+    // Snapshot stream info under the spinlock so core 0 callbacks can't
+    // modify the strings while they are being serialized
+    StreamInfoData info;
+    player.getStreamInfoSnapshot(info);
     // Populate JSON document with all status values
     doc["playing"] = player.isPlaying();
-    doc["streamURL"] = player.getStreamUrl();
-    doc["streamName"] = player.getStreamName();
-    doc["streamTitle"] = player.getStreamTitle();
-    doc["streamIcyURL"] = player.getStreamIcyUrl();
-    doc["streamIconURL"] = player.getStreamIconUrl();
-    doc["bitrate"] = player.getBitrate();
+    doc["streamURL"] = info.url;
+    doc["streamName"] = info.name;
+    doc["streamTitle"] = info.title;
+    doc["streamIcyURL"] = info.icyUrl;
+    doc["streamIconURL"] = info.iconUrl;
+    doc["bitrate"] = info.bitrate;
     doc["volume"] = player.getVolume();
     doc["bass"] = player.getBass();
     doc["mid"] = player.getMid();
@@ -1938,8 +1943,12 @@ void updateDisplay() {
   } else {
     ipString = "No IP";
   }
+  // Snapshot stream info under the spinlock so core 0 callbacks can't
+  // modify the strings while the display renders them
+  StreamInfoData info;
+  player.getStreamInfoSnapshot(info);
   // When not playing, show the selected playlist item name instead of empty stream name
-  const char* displayStreamName = player.getStreamName();
+  const char* displayStreamName = info.name;
   if (!player.isPlaying() && strlen(displayStreamName) == 0) {
     // If we have a playlist and a valid index, show the selected item name
     if (player.getPlaylistCount() > 0 && player.getPlaylistIndex() < player.getPlaylistCount()) {
@@ -1947,7 +1956,7 @@ void updateDisplay() {
     }
   }
   // Update the display with current status
-  display->update(player.isPlaying(), player.getStreamTitle(), displayStreamName, player.getVolume(), player.getBitrate(), ipString);
+  display->update(player.isPlaying(), info.title, displayStreamName, player.getVolume(), info.bitrate, ipString);
 }
 
 

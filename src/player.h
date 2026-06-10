@@ -123,6 +123,13 @@ public:
   void resetDirty();
 
   // Stream info getters
+  // Copy the whole stream info under the spinlock; use this when reading the
+  // strings on core 1 while audio callbacks on core 0 may be writing them
+  void getStreamInfoSnapshot(StreamInfoData& out) {
+    taskENTER_CRITICAL(&spinlock);
+    out = streamInfo;
+    taskEXIT_CRITICAL(&spinlock);
+  }
   const char* getStreamUrl() const { return streamInfo.url; }
   const char* getStreamName() const { return streamInfo.name; }
   const char* getStreamTitle() const { return streamInfo.title; }
