@@ -1037,6 +1037,28 @@ void handleTouch() {
  * This function provides a simple interface with play/stop controls
  * and stream selection without CSS or JavaScript
  */
+/**
+ * @brief Escape a string for safe inclusion in HTML content or attributes
+ * @param text The raw text (may come from untrusted stream metadata)
+ * @return HTML-escaped copy of the text
+ */
+static String htmlEscape(const char* text) {
+  String out;
+  if (text == nullptr) return out;
+  out.reserve(strlen(text));
+  for (const char* p = text; *p; p++) {
+    switch (*p) {
+      case '&':  out += "&amp;";  break;
+      case '<':  out += "&lt;";   break;
+      case '>':  out += "&gt;";   break;
+      case '"':  out += "&quot;"; break;
+      case '\'': out += "&#39;";  break;
+      default:   out += *p;       break;
+    }
+  }
+  return out;
+}
+
 void handleSimpleWebPage() {
   if (server.method() == HTTP_POST) {
     // Handle form submission
@@ -1116,11 +1138,12 @@ void handleSimpleWebPage() {
   playlistOptions[0] = '\0';   // Initialize empty string
   if (player.getPlaylistCount() > 0) {
     for (int i = 0; i < player.getPlaylistCount(); i++) {
-      char option[128];
+      char option[160];
+      String escapedName = htmlEscape(player.getPlaylistItem(i).name);
       if (i == player.getPlaylistIndex()) {
-        snprintf(option, sizeof(option), "<option value='%d' selected>%s</option>", i, player.getPlaylistItem(i).name);
+        snprintf(option, sizeof(option), "<option value='%d' selected>%s</option>", i, escapedName.c_str());
       } else {
-        snprintf(option, sizeof(option), "<option value='%d'>%s</option>", i, player.getPlaylistItem(i).name);
+        snprintf(option, sizeof(option), "<option value='%d'>%s</option>", i, escapedName.c_str());
       }
       strncat(playlistOptions, option, sizeof(playlistOptions) - strlen(playlistOptions) - 1);
     }
@@ -1137,11 +1160,11 @@ void handleSimpleWebPage() {
   // Show current stream name
   if (player.isPlaying() && player.getStreamTitle()[0]) {
     html += "<p><b>Now playing:</b> ";
-    html += player.getStreamTitle();
+    html += htmlEscape(player.getStreamTitle());
     html += "</p>";
   } else if (!player.isPlaying() && player.getPlaylistCount() > 0 && player.getPlaylistIndex() < player.getPlaylistCount()) {
     html += "<p><b>Selected:</b> ";
-    html += player.getPlaylistItem(player.getPlaylistIndex()).name;
+    html += htmlEscape(player.getPlaylistItem(player.getPlaylistIndex()).name);
     html += "</p>";
   }
   html += "</section><section><h2>Controls</h2>";
