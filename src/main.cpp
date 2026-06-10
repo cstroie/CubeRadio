@@ -2279,6 +2279,15 @@ void loop() {
       connectToWiFi();
     }
   }
+
+  // Hourly heap telemetry: makes slow fragmentation/leaks visible in the
+  // serial log over long uptimes (largest block tracks fragmentation)
+  static unsigned long lastHeapLog = 0;
+  if (millis() - lastHeapLog > 3600000UL) {
+    lastHeapLog = millis();
+    Serial.printf("Heap: free %u, min free %u, largest block %u\n",
+                  ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+  }
   
   // Handle display timeout with configurable timeout value
   display->handleTimeout(player.isPlaying(), millis());
