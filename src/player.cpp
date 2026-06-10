@@ -558,7 +558,7 @@ Audio* Player::setupAudioOutput() {
   audio->setBufsize(4096, 1048576); // 4KB in RAM, 1MB in PSRAM
   #else
   Serial.println("PSRAM not supported on this board, using smaller audio buffer");
-  audio->setBufsize(8192, 0); // 32KB in RAM only
+  audio->setBufsize(8192, 0); // 8KB in RAM only
   #endif
   return audio;
 }
