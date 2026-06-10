@@ -2014,7 +2014,7 @@ void updateDisplay() {
   const char* displayStreamName = info.name;
   if (!player.isPlaying() && strlen(displayStreamName) == 0) {
     // If we have a playlist and a valid index, show the selected item name
-    if (player.getPlaylistCount() > 0 && player.getPlaylistIndex() < player.getPlaylistCount()) {
+    if (player.isPlaylistIndexValid()) {
       displayStreamName = player.getPlaylistItem(player.getPlaylistIndex()).name;
     }
   }
