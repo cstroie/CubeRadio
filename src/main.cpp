@@ -1089,9 +1089,15 @@ void handleSimpleWebPage() {
         }
         // Save player state when user requests to play
         player.savePlayerState();
+        // Update display and notify clients
+        updateDisplay();
+        sendStatusToClients();
       } else if (action == "stop") {
         // Stop playback
         player.stopStream();
+        // Update display and notify clients
+        updateDisplay();
+        sendStatusToClients();
       } else if (action == "volume") {
         // Set volume
         if (server.hasArg("volume")) {
@@ -1114,6 +1120,9 @@ void handleSimpleWebPage() {
             // Use a generic name for the stream
             String streamName = "Stream";
             player.startStream(customUrl.c_str(), streamName.c_str());
+            // Update display and notify clients
+            updateDisplay();
+            sendStatusToClients();
           }
         }
       }
@@ -1134,7 +1143,8 @@ void handleSimpleWebPage() {
   }
   
   // Precompute playlist options to avoid string fragmentation
-  char playlistOptions[2048];  // Buffer for playlist options (adjust size as needed)
+  // 20 entries × up to ~160 chars of escaped name + markup
+  char playlistOptions[3328];
   playlistOptions[0] = '\0';   // Initialize empty string
   if (player.getPlaylistCount() > 0) {
     for (int i = 0; i < player.getPlaylistCount(); i++) {
