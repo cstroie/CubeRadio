@@ -1731,23 +1731,25 @@ void MPDInterface::handleIdleMode() {
   unsigned long currentStatusHash = this->player.isPlaying() ? 1 : 0;
   currentStatusHash = currentStatusHash * 31 + this->player.getVolume();
   // Prepare to send idle response if changes detected
-  bool sendIdleResponse = false;
-  String idleChanges = "";
-  // Check for title change - indicates playlist content change
+  bool playerChanged = false;
+  bool mixerChanged = false;
+  // Check for title change - the current song's metadata changed, which is
+  // a "player" subsystem change in MPD terms (clients refetch currentsong)
   if (currentTitleHash != lastTitleHash) {
-    idleChanges += "changed: playlist\n";
     lastTitleHash = currentTitleHash;
-    sendIdleResponse = true;
+    playerChanged = true;
   }
   // Check for status change - indicates player or mixer state change
   if (currentStatusHash != lastStatusHash) {
-    idleChanges += "changed: player\n";
-    idleChanges += "changed: mixer\n";
     lastStatusHash = currentStatusHash;
-    sendIdleResponse = true;
+    playerChanged = true;
+    mixerChanged = true;
   }
   // Send idle response if there are changes
-  if (sendIdleResponse) {
+  if (playerChanged || mixerChanged) {
+    String idleChanges = "";
+    if (playerChanged) idleChanges += "changed: player\n";
+    if (mixerChanged) idleChanges += "changed: mixer\n";
     if (mpdClient && mpdClient.connected()) {
         mpdClient.print(idleChanges);
         mpdClient.print(mpdResponseOK());
