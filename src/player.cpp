@@ -212,10 +212,12 @@ void Player::loadPlayerState() {
   DynamicJsonDocument doc(PLAYER_STATE_BUFFER_SIZE);  // Use predefined buffer size
   if (readJsonFile("/player.json", PLAYER_STATE_BUFFER_SIZE, doc)) {
     playerState.playing = doc["playing"] | false;
-    playerState.volume = doc["volume"] | 8;
-    playerState.bass = doc["bass"] | 0;
-    playerState.mid = doc["mid"] | 0;
-    playerState.treble = doc["treble"] | 0;
+    // Constrain like the setters do — a corrupted or hand-edited file must
+    // not put the state outside the ranges the MPD/web volume math assumes
+    playerState.volume = constrain(doc["volume"] | 8, 0, 22);
+    playerState.bass = constrain(doc["bass"] | 0, -6, 6);
+    playerState.mid = constrain(doc["mid"] | 0, -6, 6);
+    playerState.treble = constrain(doc["treble"] | 0, -6, 6);
     setPlaylistIndex(doc["playlistIndex"] | -1);
     playerState.totalPlayTime = doc["totalPlayTime"] | 0UL;
     Serial.println("Loaded player state from SPIFFS");
