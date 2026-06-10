@@ -70,8 +70,10 @@ void setupRotaryEncoder() {
  */
 void IRAM_ATTR RotaryEncoder::handleRotation() {
   unsigned long currentTime = millis();
-  // Debounce rotary encoder (ignore if less than 100ms since last event)
-  if (currentTime - lastRotaryTime < 100) {
+  // Debounce the CLK contact (~5 ms covers mechanical bounce). A detented
+  // encoder produces one CLK edge per detent; 100 ms here capped rotation
+  // at ~10 detents/s and swallowed most steps of a quick spin.
+  if (currentTime - lastRotaryTime < 5) {
     return;
   }
   // Read data signal
