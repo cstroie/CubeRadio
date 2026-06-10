@@ -48,12 +48,15 @@ The ESP32-CAM typically uses:
 #define DEFAULT_ROTARY_SW        -1  ///< Rotary encoder switch pin
 #define DEFAULT_TOUCH_PLAY        0  ///< Touch button play/pause pin
 #define DEFAULT_TOUCH_NEXT        2  ///< Touch button next/volume-up pin
-#define DEFAULT_TOUCH_PREV        4  ///< Touch button previous/volume-down pin
+#define DEFAULT_TOUCH_PREV       -1  ///< Touch button previous/volume-down pin (GPIO 4 reassigned to display SCL)
 #define DEFAULT_TOUCH_THRESHOLD  40  ///< Touch threshold value
 #define DEFAULT_TOUCH_DEBOUNCE  100  ///< Touch debounce time in milliseconds
 #define DEFAULT_BOARD_BUTTON     -1  ///< ESP32 board button pin (with internal pull-up resistor)
-#define DEFAULT_DISPLAY_SDA      15  ///< OLED display SDA pin
-#define DEFAULT_DISPLAY_SCL      16  ///< OLED display SCL pin
+// Display I2C: GPIO 15 collided with I2S DOUT and GPIO 16 is the PSRAM chip
+// select — both unusable. GPIO 14 and 4 are free when no SD card is fitted
+// (4 also drives the flash LED; avoid 2: an I2C pull-up there blocks flashing).
+#define DEFAULT_DISPLAY_SDA      14  ///< OLED display SDA pin
+#define DEFAULT_DISPLAY_SCL       4  ///< OLED display SCL pin
 #define DEFAULT_DISPLAY_TYPE      0  ///< OLED display type (index)
 #define DEFAULT_DISPLAY_ADDR   0x3C  ///< OLED display I2C address
 #define DEFAULT_DISPLAY_TIMEOUT  30  ///< Display timeout in seconds
