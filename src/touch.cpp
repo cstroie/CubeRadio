@@ -151,11 +151,10 @@ void TouchButton::handle() {
  * @return true if button was pressed, false otherwise
  */
 bool TouchButton::wasPressed() {
-  // Store current flag state
-  bool result = pressedFlag;
-  // Clear flag to prevent reprocessing (one-shot detection)
-  // Disable interrupts during this operation to prevent race condition
+  // Read and clear the flag atomically: reading it before the critical
+  // section would lose a press if the ISR fired between read and clear
   noInterrupts();
+  bool result = pressedFlag;
   pressedFlag = false;
   interrupts();
   // Return previous flag state
