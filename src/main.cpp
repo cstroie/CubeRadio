@@ -912,26 +912,17 @@ void handleRotary() {
   int currentPosition = rotaryEncoder.getPosition();
   if (currentPosition != lastRotaryPosition) {
     int diff = currentPosition - lastRotaryPosition;
-    // Process the rotation
-    if (diff > 0) {
-      // Rotate clockwise - volume up or next item
-      if (player.isPlaying()) {
-        // If playing, increase volume by 1 (capped at 22)
-        player.setVolume(min(22, player.getVolume() + 1));
-        sendStatusToClients();  // Notify clients of status change
-      } else {
-        // If not playing, select next item in playlist
-        player.setPlaylistIndex(player.getNextPlaylistItem());
-      }
-    } else if (diff < 0) {
-      // Rotate counter-clockwise - volume down or previous item
-      if (player.isPlaying()) {
-        // If playing, decrease volume by 1 (capped at 0)
-        player.setVolume(max(0, player.getVolume() - 1));
-        sendStatusToClients();  // Notify clients of status change
-      } else {
-        // If not playing, select previous item in playlist
-        player.setPlaylistIndex(player.getPrevPlaylistItem());
+    // Apply the full rotation delta: several detents can accumulate between
+    // 150 ms main-loop ticks, and each one should count as a step
+    if (player.isPlaying()) {
+      // If playing, adjust volume by the delta (setVolume clamps to 0-22)
+      player.setVolume(player.getVolume() + diff);
+      sendStatusToClients();  // Notify clients of status change
+    } else {
+      // If not playing, move the playlist selection one step per detent
+      for (int i = 0; i < abs(diff); i++) {
+        player.setPlaylistIndex(diff > 0 ? player.getNextPlaylistItem()
+                                         : player.getPrevPlaylistItem());
       }
     }
     // Update last position
