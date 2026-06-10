@@ -66,6 +66,7 @@ private:
   StreamInfoData streamInfo;
   Playlist* playlist;
   Audio* audio;
+  unsigned long playlistVersion = 1; ///< Bumped on every playlist change (MPD status)
   portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 public:
@@ -89,6 +90,7 @@ public:
   int getTreble() const { return playerState.treble; }
   int getPlaylistIndex() const { return playerState.playlistIndex; }
   int getPlaylistCount() const;
+  unsigned long getPlaylistVersion() const { return playlistVersion; }
   int getBitrate() const { return streamInfo.bitrate; }
 
   // Playlist navigation helper functions

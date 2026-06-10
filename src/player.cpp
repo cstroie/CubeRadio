@@ -265,6 +265,7 @@ void Player::savePlayerState() {
  */
 void Player::loadPlaylist() {
   playlist->load();  // Load using predefined buffer size PLAYLIST_BUFFER_SIZE
+  playlistVersion++;
 }
 
 /**
@@ -284,6 +285,7 @@ void Player::savePlaylist() {
  */
 void Player::setPlaylistItem(int index, const char* name, const char* url) {
   playlist->setItem(index, name, url);
+  playlistVersion++;
 }
 
 /**
@@ -293,7 +295,9 @@ void Player::setPlaylistItem(int index, const char* name, const char* url) {
  * Delegates to the playlist object's addItem method
  */
 bool Player::addPlaylistItem(const char* name, const char* url) {
-  return playlist->addItem(name, url);
+  bool added = playlist->addItem(name, url);
+  if (added) playlistVersion++;
+  return added;
 }
 
 /**
@@ -303,6 +307,7 @@ bool Player::addPlaylistItem(const char* name, const char* url) {
  */
 void Player::removePlaylistItem(int index) {
   playlist->removeItem(index);
+  playlistVersion++;
   // Keep playlistIndex pointing at the same logical stream after removal.
   // If the removed entry was before the current index, shift down by one.
   // If it was the current entry (or the list is now empty), clamp to 0.
@@ -321,6 +326,7 @@ void Player::removePlaylistItem(int index) {
  */
 void Player::clearPlaylist() {
   playlist->clear();
+  playlistVersion++;
 }
 
 /**

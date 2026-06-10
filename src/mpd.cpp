@@ -900,7 +900,7 @@ void MPDInterface::handleStatusCommand(const String& args) {
   mpdClient.print("random: 0\n");
   mpdClient.print("single: 0\n");
   mpdClient.print("consume: 0\n");
-  mpdClient.print("playlist: 1\n");
+  mpdClient.print("playlist: " + String(this->player.getPlaylistVersion()) + "\n");
   mpdClient.print("playlistlength: " + String(this->player.getPlaylistCount()) + "\n");
   mpdClient.print("mixrampdb: 0.000000\n");
   mpdClient.print("state: " + String(this->player.isPlaying() ? "play" : "stop") + "\n");
