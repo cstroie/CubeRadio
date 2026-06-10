@@ -1751,12 +1751,17 @@ void sendStatusToClients(bool fullStatus) {
   // Only broadcast if WebSocket server has clients AND they are connected
   if (webSocket.connectedClients() > 0) {
     String status = generateStatusJSON(fullStatus);
+    // Track full and partial formats separately: comparing a partial
+    // {"bitrate":N} frame against the last full status (or vice versa)
+    // always looks "changed" and causes redundant broadcasts
+    static String previousPartialStatus = "";
+    String& previous = fullStatus ? previousStatus : previousPartialStatus;
     // Only send if status has changed
-    if (status != previousStatus) {
+    if (status != previous) {
       // Use broadcastTXT with error handling
       webSocket.broadcastTXT(status);
       // Update previous status
-      previousStatus = status;
+      previous = status;
     }
   }
 }
