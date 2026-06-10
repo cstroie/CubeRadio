@@ -39,10 +39,8 @@
 class Audio;
 class WebServer;
 class WebSocketsServer;
-class WiFiServer;
 class Adafruit_SSD1306;
 class MPDInterface;
-class WiFiClient;
 class Display;
 class RotaryEncoder;
 
