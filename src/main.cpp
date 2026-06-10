@@ -2392,8 +2392,7 @@ void setup() {
     display->showStatus("AP Start Failed", "", "");
   }
 
-  // Start mDNS responder
-  #if defined(BOARD_HAS_PSRAM)
+  // Start mDNS responder (CubeRadio.local)
   if (MDNS.begin("CubeRadio")) {
     Serial.println("MDNS responder started");
     MDNS.addService("http", "tcp", 80);
@@ -2401,7 +2400,6 @@ void setup() {
   } else {
     Serial.println("Error setting up MDNS responder!");
   }
-  #endif
   
   // Setup audio output with error handling
   player.setupAudioOutput();
