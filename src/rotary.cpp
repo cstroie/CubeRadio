@@ -145,9 +145,11 @@ void RotaryEncoder::setPosition(int pos) {
  * @return true if button was pressed since last check, false otherwise
  */
 bool RotaryEncoder::wasButtonPressed() {
-  bool result = buttonPressedFlag;  // Store current flag state
+  // Read and clear the flag atomically: reading it before the critical
+  // section would lose a press if the ISR fired between read and clear
   noInterrupts();
-  buttonPressedFlag = false;        // Clear flag to prevent reprocessing
+  bool result = buttonPressedFlag;
+  buttonPressedFlag = false;
   interrupts();
   return result;                    // Return previous flag state
 }
