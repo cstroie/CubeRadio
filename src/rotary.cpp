@@ -45,14 +45,20 @@ void IRAM_ATTR rotarySwISR() {
  * and attaches interrupt handlers for rotation and button press events.
  */
 void setupRotaryEncoder() {
-  // Configure rotary encoder pins with internal pull-up resistors
-  pinMode(config.rotary_clk, INPUT_PULLUP);   // Enable internal pull-up resistor
-  pinMode(config.rotary_dt,  INPUT_PULLUP);   // Enable internal pull-up resistor
-  pinMode(config.rotary_sw,  INPUT_PULLUP);   // Enable internal pull-up resistor
-  // Attach interrupt handler for rotary encoder rotation
-  attachInterrupt(digitalPinToInterrupt(config.rotary_clk), rotaryISR, FALLING);
-  // Attach interrupt handler for rotary encoder button press
-  attachInterrupt(digitalPinToInterrupt(config.rotary_sw), rotarySwISR, FALLING);
+  // Rotation needs both CLK and DT; skip if either is unconfigured (-1)
+  if (config.rotary_clk >= 0 && config.rotary_dt >= 0) {
+    // Configure rotary encoder pins with internal pull-up resistors
+    pinMode(config.rotary_clk, INPUT_PULLUP);   // Enable internal pull-up resistor
+    pinMode(config.rotary_dt,  INPUT_PULLUP);   // Enable internal pull-up resistor
+    // Attach interrupt handler for rotary encoder rotation
+    attachInterrupt(digitalPinToInterrupt(config.rotary_clk), rotaryISR, FALLING);
+  }
+  // The switch is independent of the rotation pins
+  if (config.rotary_sw >= 0) {
+    pinMode(config.rotary_sw, INPUT_PULLUP);    // Enable internal pull-up resistor
+    // Attach interrupt handler for rotary encoder button press
+    attachInterrupt(digitalPinToInterrupt(config.rotary_sw), rotarySwISR, FALLING);
+  }
 }
 
 /**
