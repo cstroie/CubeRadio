@@ -842,13 +842,47 @@ void handlePostConfig() {
  * Handles audio streaming on core 0
  * @param pvParameters Task parameters (not used)
  */
+// Cooperative pause handshake: the Audio object is not thread-safe, so core 1
+// must not call connecttohost()/stopSong() while audio->loop() runs on core 0.
+// The task parks itself at a safe point (between loop() calls) when asked.
+static volatile bool audioTaskPauseRequested = false;
+static volatile bool audioTaskParked = false;
+
 void audioTask(void *pvParameters) {
   while (true) {
+    if (audioTaskPauseRequested) {
+      // Park at a safe point until the pause is released
+      audioTaskParked = true;
+      vTaskDelay(1);
+      continue;
+    }
+    audioTaskParked = false;
     // Process audio streaming with error handling
     player.handleAudio();
     // Add a small yield to prevent interrupt blocking
     vTaskDelay(1);  // Better than delay() for FreeRTOS tasks
   }
+}
+
+/**
+ * @brief Pause the audio task at a safe point
+ * Blocks (up to ~100 ms) until the task has parked between loop() calls,
+ * so the caller can safely mutate the Audio object from core 1.
+ */
+void pauseAudioTask() {
+  if (audioTaskHandle == NULL) return;
+  audioTaskPauseRequested = true;
+  // Wait for the task to acknowledge; audio->loop() takes a few ms at most
+  for (int i = 0; i < 100 && !audioTaskParked; i++) {
+    delay(1);
+  }
+}
+
+/**
+ * @brief Resume the audio task after pauseAudioTask()
+ */
+void resumeAudioTask() {
+  audioTaskPauseRequested = false;
 }
 
 

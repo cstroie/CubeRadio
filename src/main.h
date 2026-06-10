@@ -90,6 +90,8 @@ void sendStatusToClients(bool fullStatus = true);
 void handleRotary();
 void handleTouch();
 void audioTask(void *pvParameters);
+void pauseAudioTask();
+void resumeAudioTask();
 void loadConfig();
 void saveConfig();
 void loadWiFiCredentials();

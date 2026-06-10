@@ -468,7 +468,10 @@ void Player::startStream(const char* url, const char* name) {
   }
   // Use ESP32-audioI2S to play the stream; only set playing on confirmed connect
   if (audio) {
+    // Audio is not thread-safe: park the core 0 task while rebuilding the stream
+    pauseAudioTask();
     bool audioConnected = audio->connecttohost(url);
+    resumeAudioTask();
     if (!audioConnected) {
       Serial.println("Error: Failed to connect to audio stream");
       playerState.playing = false;
@@ -498,7 +501,10 @@ void Player::startStream(const char* url, const char* name) {
 void Player::stopStream() {
   // Stop the audio playback
   if (audio) {
+    // Audio is not thread-safe: park the core 0 task while tearing down
+    pauseAudioTask();
     audio->stopSong();
+    resumeAudioTask();
   }
   // Set playback status to stopped
   playerState.playing = false;
