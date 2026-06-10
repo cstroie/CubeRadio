@@ -1019,13 +1019,13 @@ void handleTouch() {
     if (player.isPlaying()) {
       // If playing, decrease volume by 1 (capped at 0)
       player.setVolume(max(0, player.getVolume() - 1));
-      sendStatusToClients();  // Notify clients of status change
     } else {
       // If not playing, select previous item in playlist
       player.setPlaylistIndex(player.getPrevPlaylistItem());
     }
-    // Refresh display
-    updateDisplay();  
+    // Update display and notify clients of status change
+    updateDisplay();
+    sendStatusToClients();
   }
 }
 
