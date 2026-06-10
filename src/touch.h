@@ -39,7 +39,7 @@ class TouchButton {
 private:
   bool lastState;                       // Last stable state
   uint8_t pin;                          // Touch pin number
-  uint16_t threshold;                   // Touch threshold value
+  uint32_t threshold;                   // Touch threshold value
   volatile unsigned long lastPressTime; // Last state change time for debouncing
   volatile bool pressedFlag;            // Flag indicating button press detected
   unsigned long debounceTime;           // Configurable debounce time
@@ -54,7 +54,7 @@ public:
    * @param debounceMs The debounce time in milliseconds (default 100)
    * @param useInterrupt Whether to use interrupt mode (default false)
    */
-  TouchButton(uint8_t touchPin, uint16_t touchThreshold = 40, unsigned long debounceMs = 100, bool useInterrupt = false);
+  TouchButton(uint8_t touchPin, uint32_t touchThreshold = 40, unsigned long debounceMs = 100, bool useInterrupt = false);
 
   /**
    * @brief Handle touch button state

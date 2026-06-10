@@ -63,7 +63,7 @@ static void (*interruptHandlers[TOUCH_PIN_COUNT])() = {
  * @param debounceMs The debounce time in milliseconds (default 100)
  * @param useInterrupt Whether to use interrupt mode (default false)
  */
-TouchButton::TouchButton(uint8_t touchPin, uint16_t touchThreshold, unsigned long debounceMs, bool useInterrupt)
+TouchButton::TouchButton(uint8_t touchPin, uint32_t touchThreshold, unsigned long debounceMs, bool useInterrupt)
   : pin(touchPin), threshold(touchThreshold), lastState(false),
     lastPressTime(0), pressedFlag(false), debounceTime(debounceMs), useInterrupt(useInterrupt) {
   // Reject GPIOs that have no touch channel: touchRead()/touchAttachInterrupt()
@@ -72,6 +72,16 @@ TouchButton::TouchButton(uint8_t touchPin, uint16_t touchThreshold, unsigned lon
     Serial.printf("Warning: GPIO %d is not touch-capable, touch button disabled\n", pin);
     valid = false;
     return;
+  }
+  // Auto-calibrate against the untouched baseline. In arduino-esp32 3.x touch
+  // readings RISE on touch, so the interrupt threshold must sit above idle;
+  // a 2.x-era config value (e.g. 40, below a ~1400 baseline) would otherwise
+  // make the interrupt fire continuously and leave the button dead.
+  uint32_t baseline = touchRead(pin);
+  if (threshold <= baseline) {
+    threshold = baseline + baseline / 5; // 20% above idle
+    Serial.printf("Touch GPIO %d: threshold auto-calibrated to %u (baseline %u)\n",
+                  pin, threshold, baseline);
   }
   if (useInterrupt) {
     // Ensure we don't exceed the maximum number of touch pins
@@ -117,8 +127,8 @@ void TouchButton::handle() {
     uint32_t touchValue = touchRead(pin);
     // Get current time
     unsigned long currentTime = millis();
-    // Check if touch value is below threshold (touched)
-    bool currentState = (touchValue < threshold);
+    // Touched when the value exceeds the threshold (core 3.x: values rise on touch)
+    bool currentState = (touchValue > threshold);
     // Reset debounce timer when state changes
     if (currentState != lastState) {
       lastPressTime = currentTime;
