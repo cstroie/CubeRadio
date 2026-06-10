@@ -17,6 +17,7 @@
  */
 
 #include "touch.h"
+#ifndef DISABLE_TOUCH
 #include "main.h"
 
 // File-scope static variable to track number of instances
@@ -217,3 +218,5 @@ void IRAM_ATTR TouchButton::handleInterrupt() {
   // Update last press time to current time for debouncing
   lastPressTime = currentTime;
 }
+
+#endif // DISABLE_TOUCH

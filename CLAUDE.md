@@ -37,6 +37,25 @@ pio run -t upload       # Flash firmware
 pio run -t uploadfs     # Upload data/ to SPIFFS
 ```
 
+### Touch buttons (DISABLE_TOUCH)
+
+The capacitive touch interface is **compiled out by default** via the
+`-DDISABLE_TOUCH` build flag in `platformio.ini`: the touch interrupt was
+found to cause severe audio stutter (the ESP32 touch FSM re-fires the ISR
+every measurement cycle while the reading is below threshold, starving the
+audio pipeline).
+
+To enable touch buttons:
+1. Remove `-DDISABLE_TOUCH` from the environment's `build_flags`.
+2. Flash and check the serial log at boot — each configured pin prints its
+   untouched baseline and the active threshold (auto-calibrated to 80% of
+   the baseline when the configured `touch_threshold` is clearly off-scale).
+3. On a classic ESP32 a touch LOWERS the reading; the threshold must sit
+   below the idle baseline but above a touched reading. Tune
+   `touch_threshold` in the web config if the auto-calibration margin
+   (20% below idle) misfires or feels insensitive — and verify audio
+   playback stays clean afterwards.
+
 ---
 
 ## Source File Map
@@ -50,7 +69,7 @@ src/
   playlist.cpp/h  JSON-backed playlist (max 20 entries)
   display.cpp/h   OLED driver: font selection, scrolling, timeout
   rotary.cpp/h    ISR-based quadrature rotary encoder + button
-  touch.cpp/h     Capacitive touch button handler (up to 3 buttons)
+  touch.cpp/h     Capacitive touch button handler (up to 3 buttons; compiled out by default, see DISABLE_TOUCH)
   pins.h          Pin macro dispatcher → pins_wroom/wrover/cam.h
   Spleen*.h       Embedded bitmap fonts (6×12, 8×16, 16×32)
 

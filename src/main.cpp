@@ -23,7 +23,9 @@
 #include "rotary.h"
 #include "player.h"
 #include "playlist.h"
+#ifndef DISABLE_TOUCH
 #include "touch.h"
+#endif
 
 // Spleen fonts https://www.onlinewebfonts.com/icon
 #include "Spleen6x12.h" 
@@ -54,9 +56,11 @@ TaskHandle_t audioTaskHandle = NULL;
 Player player;
  
 // Touch buttons
+#ifndef DISABLE_TOUCH
 TouchButton* touchPlay = nullptr;
 TouchButton* touchNext = nullptr;
 TouchButton* touchPrev = nullptr;
+#endif
 
 // Flag to indicate board button press
 static volatile bool boardButtonPressed = false;
@@ -964,6 +968,7 @@ void handleRotary() {
  * This function implements the same functionality as the rotary encoder
  */
 void handleTouch() {
+#ifndef DISABLE_TOUCH
   // Handle play/pause button
   if (touchPlay && touchPlay->wasPressed()) {
     display->setActivityTime(millis()); // Update activity time
@@ -1018,6 +1023,7 @@ void handleTouch() {
     updateDisplay();
     sendStatusToClients();
   }
+#endif // DISABLE_TOUCH
 }
 
 
@@ -2277,6 +2283,7 @@ void setup() {
   display = new Display(*displayOLED, (enum display_t)config.display_type);
   display->begin();
   
+#ifndef DISABLE_TOUCH
   // Initialize touch buttons
   if (config.touch_play >= 0) {
     touchPlay = new TouchButton(config.touch_play, config.touch_threshold, config.touch_debounce, true);
@@ -2295,6 +2302,9 @@ void setup() {
                                config.touch_next, touchNext->getTouchValue(), config.touch_threshold);
   if (touchPrev) Serial.printf("Touch prev (GPIO %d) baseline: %u, threshold: %d\n",
                                config.touch_prev, touchPrev->getTouchValue(), config.touch_threshold);
+#else
+  Serial.println("Touch interface disabled at compile time (DISABLE_TOUCH)");
+#endif
 
   // Load WiFi credentials with error recovery
   loadWiFiCredentials();
