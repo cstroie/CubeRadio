@@ -1835,16 +1835,27 @@ void handleProxyRequest() {
           contentType = "application/octet-stream";
         }
       }
+      // getSize() returns -1 for chunked/unknown length; cap such responses so an
+      // endless stream (e.g. a radio URL) can never block the main loop forever
+      const size_t maxProxyBytes = 256 * 1024;
+      const unsigned long maxProxyMillis = 10000;
+      int sizeHint = http.getSize();
+      size_t contentLength = (sizeHint > 0) ? (size_t)sizeHint : 0;
       // Send response with proper content type and length
-      server.setContentLength(http.getSize());
+      server.setContentLength((sizeHint > 0) ? (size_t)sizeHint : CONTENT_LENGTH_UNKNOWN);
       server.send(httpResponseCode, contentType, "");
       // Stream the content
       const size_t bufferSize = 1024;
       uint8_t buffer[bufferSize];
       size_t totalBytesRead = 0;
-      size_t contentLength = http.getSize();
+      unsigned long proxyStart = millis();
       // Read and send data in chunks
-      while (http.connected() && (contentLength == 0 || totalBytesRead < contentLength)) {
+      while (http.connected() && server.client().connected() &&
+             (contentLength == 0 || totalBytesRead < contentLength)) {
+        // Enforce byte and time caps for unknown-length responses
+        if (totalBytesRead >= maxProxyBytes || millis() - proxyStart > maxProxyMillis) {
+          break;
+        }
         size_t bytesAvailable = stream->available();
         if (bytesAvailable) {
           size_t bytesRead = stream->readBytes(buffer, min(bytesAvailable, bufferSize));
