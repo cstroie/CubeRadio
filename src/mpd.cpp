@@ -475,7 +475,8 @@ void MPDInterface::handleStatsCommand(const String& args) {
   unsigned long uptime = (millis() / 1000);
   unsigned long playtime = this->player.getTotalPlayTime();
   if (this->player.isPlaying() && this->player.getPlayStartTime() > 0) {
-    playtime += (millis() / 1000) - this->player.getPlayStartTime();
+    // playStartTime is in milliseconds; unsigned subtraction handles rollover
+    playtime += (millis() - this->player.getPlayStartTime()) / 1000;
   }
   // Send stats information
   mpdClient.print("artists: 1\n");
@@ -909,7 +910,8 @@ void MPDInterface::handleStatusCommand(const String& args) {
     // Calculate elapsed time since playback started
     unsigned long elapsed = 0;
     if (this->player.getPlayStartTime() > 0) {
-      elapsed = (millis() / 1000) - this->player.getPlayStartTime();
+      // playStartTime is in milliseconds; unsigned subtraction handles rollover
+      elapsed = (millis() - this->player.getPlayStartTime()) / 1000;
     }
     mpdClient.print("elapsed: " + String(elapsed) + ".000\n");
     mpdClient.print("bitrate: " + String(this->player.getBitrate()) + "\n");

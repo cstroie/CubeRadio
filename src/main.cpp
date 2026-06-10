@@ -1338,8 +1338,8 @@ void handlePlayer() {
       streamObj["bitrate"] = player.getBitrate();
       // Calculate elapsed time
       if (player.getPlayStartTime() > 0) {
-        unsigned long currentTime = millis() / 1000;
-        unsigned long elapsedTime = currentTime - player.getPlayStartTime();
+        // playStartTime is in milliseconds; unsigned subtraction handles rollover
+        unsigned long elapsedTime = (millis() - player.getPlayStartTime()) / 1000;
         streamObj["elapsed"] = elapsedTime;
       } else {
         streamObj["elapsed"] = 0;
