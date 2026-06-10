@@ -1741,20 +1741,10 @@ void handleProxyRequest() {
   http.setTimeout(5000);
   // Configure the request based on the original method
   http.begin(targetUrl);
-  // Copy headers from the original request
-  int headerCount = server.headers();
-  for (int i = 0; i < headerCount; i++) {
-    String headerName = server.headerName(i);
-    String headerValue = server.header(i);
-    // Skip headers that shouldn't be forwarded
-    if (headerName.equalsIgnoreCase("Host") || 
-        headerName.equalsIgnoreCase("Connection") ||
-        headerName.equalsIgnoreCase("Content-Length")) {
-      continue;
-    }
-    // Forward all other headers
-    http.addHeader(headerName, headerValue);
-  }
+  // HTTPClient only stores response headers explicitly requested via
+  // collectHeaders(); register Content-Type so it can be forwarded
+  const char* collectedHeaders[] = {"Content-Type"};
+  http.collectHeaders(collectedHeaders, 1);
   // Variable to hold HTTP response code
   int httpResponseCode;
   // Handle different HTTP methods
@@ -1773,30 +1763,6 @@ void handleProxyRequest() {
   }
   // Check for HTTP errors
   if (httpResponseCode > 0) {
-    // Get response headers and forward them
-    // Use public methods to iterate through headers
-    int headerCount = 0;
-    String headerName, headerValue;
-    // Get all headers one by one until we've processed them all
-    while (true) {
-      headerName = http.headerName(headerCount);
-      headerValue = http.header(headerCount);
-      // If we get empty strings, we've reached the end of headers
-      if (headerName.length() == 0 && headerValue.length() == 0) {
-        break;
-      }
-      // Skip headers that might cause issues
-      if (!headerName.equalsIgnoreCase("Connection") &&
-          !headerName.equalsIgnoreCase("Transfer-Encoding")) {
-        server.sendHeader(headerName, headerValue, false);
-      }
-      // Increment header count
-      headerCount++;
-      // Safety check to prevent infinite loop
-      if (headerCount > 100) {
-        break;
-      }
-    }
     // For HEAD requests, only send headers without content
     if (server.method() == HTTP_HEAD) {
       // Get content type
