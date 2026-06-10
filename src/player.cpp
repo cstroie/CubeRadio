@@ -424,10 +424,10 @@ const StreamInfo& Player::getPlaylistItem(int index) const {
  */
 void Player::startStream(const char* url, const char* name) {
   bool resume = false;
-  // Stop the currently playing stream if the stream changes
+  // Stop the currently playing stream if the stream changes; defer the
+  // display/client notification to the start of the new stream below
   if (audio && url && strlen(url) > 0) {
-    // Stop first
-    stopStream();
+    stopStream(false);
   }
   // If no URL provided, check if we have a current stream to resume
   if (!url || strlen(url) == 0) {
@@ -501,7 +501,7 @@ void Player::startStream(const char* url, const char* name) {
  * This function stops audio playback, clears stream information, and resets
  * the playback state to stopped.
  */
-void Player::stopStream() {
+void Player::stopStream(bool notify) {
   // Stop the audio playback
   if (audio) {
     // Audio is not thread-safe: park the core 0 task while tearing down
@@ -522,8 +522,12 @@ void Player::stopStream() {
   if (config.led_pin >= 0) {
     digitalWrite(config.led_pin, LOW);
   }
-  updateDisplay();  // Refresh the display
-  sendStatusToClients();  // Notify clients of status change
+  // Skip the intermediate refresh when stopping as part of a station change;
+  // startStream() notifies once the new stream is up
+  if (notify) {
+    updateDisplay();  // Refresh the display
+    sendStatusToClients();  // Notify clients of status change
+  }
 }
 
 /**

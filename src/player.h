@@ -160,7 +160,7 @@ public:
 
   // Audio control methods
   void startStream(const char* url = nullptr, const char* name = nullptr);
-  void stopStream();
+  void stopStream(bool notify = true);
 
   // Audio setup method
   Audio* setupAudioOutput();
