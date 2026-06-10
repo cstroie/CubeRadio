@@ -73,13 +73,15 @@ TouchButton::TouchButton(uint8_t touchPin, uint32_t touchThreshold, unsigned lon
     valid = false;
     return;
   }
-  // Auto-calibrate against the untouched baseline. In arduino-esp32 3.x touch
-  // readings RISE on touch, so the interrupt threshold must sit above idle;
-  // a 2.x-era config value (e.g. 40, below a ~1400 baseline) would otherwise
-  // make the interrupt fire continuously and leave the button dead.
+  // Auto-calibrate against the untouched baseline. On the classic ESP32 a
+  // touch LOWERS the reading and the interrupt fires when the value drops
+  // below the threshold — so the threshold must sit below idle but above a
+  // touched reading. Core 3.x raw values (~1400 idle here) dwarf the 2.x-era
+  // default of 40, which left the button dead. If the configured threshold
+  // is clearly not calibrated for this scale, use 80% of the idle baseline.
   uint32_t baseline = touchRead(pin);
-  if (threshold <= baseline) {
-    threshold = baseline + baseline / 5; // 20% above idle
+  if (threshold < baseline / 2) {
+    threshold = baseline - baseline / 5; // 20% below idle
     Serial.printf("Touch GPIO %d: threshold auto-calibrated to %u (baseline %u)\n",
                   pin, threshold, baseline);
   }
@@ -127,8 +129,8 @@ void TouchButton::handle() {
     uint32_t touchValue = touchRead(pin);
     // Get current time
     unsigned long currentTime = millis();
-    // Touched when the value exceeds the threshold (core 3.x: values rise on touch)
-    bool currentState = (touchValue > threshold);
+    // Touched when the value drops below the threshold (classic ESP32)
+    bool currentState = (touchValue < threshold);
     // Reset debounce timer when state changes
     if (currentState != lastState) {
       lastPressTime = currentTime;
