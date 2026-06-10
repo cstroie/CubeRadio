@@ -2236,12 +2236,16 @@ bool MPDInterface::executeCommand(const String& command) {
         return true;
       }
     } else {
-      if (command.startsWith(cmd.name)) {
-        // Extract arguments (everything after the command name)
+      // Prefix match must end at a word boundary: the command is either
+      // exactly the name or followed by a space. Without this, e.g.
+      // "playlist" would match "play" with args "ist" and start playback.
+      size_t nameLen = strlen(cmd.name);
+      if (command.startsWith(cmd.name) &&
+          (command.length() == nameLen || command.charAt(nameLen) == ' ')) {
+        // Extract arguments (everything after the command name and space)
         String args = "";
-        if (command.length() > strlen(cmd.name)) {
-          // +1 for space
-          args = command.substring(strlen(cmd.name) + 1);
+        if (command.length() > nameLen) {
+          args = command.substring(nameLen + 1);
         }
         (this->*cmd.handler)(args);
         return true;
