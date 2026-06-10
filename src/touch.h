@@ -44,6 +44,7 @@ private:
   volatile bool pressedFlag;            // Flag indicating button press detected
   unsigned long debounceTime;           // Configurable debounce time
   bool useInterrupt;                    // Flag to indicate if interrupt mode is used
+  bool valid = true;                    // False when the GPIO has no touch channel
 
 public:
   /**
@@ -80,11 +81,11 @@ public:
   /**
    * @brief Get the current touch value
    * @return Current touch value
-   * 
+   *
    * This method reads the raw capacitance value from the touch pin.
-   * Lower values indicate stronger touch detection.
+   * Note: arduino-esp32 2.x values drop on touch; 3.x values rise.
    */
-  uint16_t getTouchValue();
+  uint32_t getTouchValue();
 
   /**
    * @brief Interrupt service routine for touch button

@@ -66,6 +66,13 @@ static void (*interruptHandlers[TOUCH_PIN_COUNT])() = {
 TouchButton::TouchButton(uint8_t touchPin, uint16_t touchThreshold, unsigned long debounceMs, bool useInterrupt)
   : pin(touchPin), threshold(touchThreshold), lastState(false),
     lastPressTime(0), pressedFlag(false), debounceTime(debounceMs), useInterrupt(useInterrupt) {
+  // Reject GPIOs that have no touch channel: touchRead()/touchAttachInterrupt()
+  // on such a pin fails silently (or reads 0 = "always touched")
+  if (digitalPinToTouchChannel(pin) < 0) {
+    Serial.printf("Warning: GPIO %d is not touch-capable, touch button disabled\n", pin);
+    valid = false;
+    return;
+  }
   if (useInterrupt) {
     // Ensure we don't exceed the maximum number of touch pins
     // This prevents array overflow in touchButtonInstances
@@ -105,9 +112,9 @@ TouchButton::TouchButton(uint8_t touchPin, uint16_t touchThreshold, unsigned lon
  */
 void TouchButton::handle() {
   // Only process in polling mode, not interrupt mode
-  if (!useInterrupt) {
-    // Read current touch value
-    uint16_t touchValue = touchRead(pin);
+  if (valid && !useInterrupt) {
+    // Read current touch value (touch_value_t is 32-bit in core 3.x)
+    uint32_t touchValue = touchRead(pin);
     // Get current time
     unsigned long currentTime = millis();
     // Check if touch value is below threshold (touched)
@@ -169,8 +176,8 @@ bool TouchButton::wasPressed() {
  * 
  * @return Current touch value
  */
-uint16_t TouchButton::getTouchValue() {
-  return touchRead(pin);
+uint32_t TouchButton::getTouchValue() {
+  return valid ? touchRead(pin) : 0;
 }
 
 /**

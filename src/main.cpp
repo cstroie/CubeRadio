@@ -2296,6 +2296,14 @@ void setup() {
   if (config.touch_prev >= 0) {
     touchPrev = new TouchButton(config.touch_prev, config.touch_threshold, config.touch_debounce, true);
   }
+  // Log baseline (untouched) readings to help calibrate touch_threshold:
+  // arduino-esp32 3.x touch values RISE on touch, unlike 2.x where they fell
+  if (touchPlay) Serial.printf("Touch play (GPIO %d) baseline: %u, threshold: %d\n",
+                               config.touch_play, touchPlay->getTouchValue(), config.touch_threshold);
+  if (touchNext) Serial.printf("Touch next (GPIO %d) baseline: %u, threshold: %d\n",
+                               config.touch_next, touchNext->getTouchValue(), config.touch_threshold);
+  if (touchPrev) Serial.printf("Touch prev (GPIO %d) baseline: %u, threshold: %d\n",
+                               config.touch_prev, touchPrev->getTouchValue(), config.touch_threshold);
 
   // Load WiFi credentials with error recovery
   loadWiFiCredentials();
