@@ -33,6 +33,20 @@
  * - Quote removal for both single and double quotes
  * - Safe integer conversion with fallback to 0 for invalid values
  * 
+ * @brief Volume scale conversions between hardware (0-22) and MPD (0-100)
+ * @details Both directions round to nearest. With truncating map() the
+ * roundtrip lost a step: getvol on hardware 4 returned 18, and setvol 18
+ * truncated back to 3 — so clients echoing the volume drifted it downward.
+ * Rounded conversions are roundtrip-stable for every hardware step.
+ */
+static int volToPercent(int vol) {
+  return (vol * 100 + 11) / 22;
+}
+static int percentToVol(int percent) {
+  return (percent * 22 + 50) / 100;
+}
+
+/**
  * @param valueStr The value string to parse
  * @return The parsed value as integer, or 0 if parsing fails
  */
@@ -698,7 +712,7 @@ void MPDInterface::handleClearCommand(const String& args) {
  * @param args Command arguments (not used for getvol command)
  */
 void MPDInterface::handleGetVolCommand(const String& args) {
-  int volPercent = map(this->player.getVolume(), 0, 22, 0, 100);
+  int volPercent = volToPercent(this->player.getVolume());
   mpdClient.print("volume: " + String(volPercent) + "\n");
   mpdClient.print(mpdResponseOK());
 }
@@ -894,7 +908,7 @@ void MPDInterface::handleCurrentSongCommand(const String& args) {
  */
 void MPDInterface::handleStatusCommand(const String& args) {
   int index = this->player.getPlaylistIndex();
-  int volPercent = map(this->player.getVolume(), 0, 22, 0, 100);
+  int volPercent = volToPercent(this->player.getVolume());
   mpdClient.print("volume: " + String(volPercent) + "\n");
   mpdClient.print("repeat: 0\n");
   mpdClient.print("random: 0\n");
@@ -1224,9 +1238,9 @@ void MPDInterface::handleSetVolCommand(const String& args) {
     int newVolume = parseValue(args);
     // Validate volume range (0-100 for MPD compatibility)
     if (newVolume >= 0 && newVolume <= 100) {
-      int mpdVol = map(this->player.getVolume(), 0, 22, 0, 100);
+      int mpdVol = volToPercent(this->player.getVolume());
       // Convert from MPD's 0-100 scale to ESP32-audioI2S 0-22 scale
-      int volume = map(newVolume, 0, 100, 0, 22);
+      int volume = percentToVol(newVolume);
       // If the volume stays the same after mapping, ensure a change
       if (volume == this->player.getVolume()) {
         if (newVolume < mpdVol)
