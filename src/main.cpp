@@ -1903,8 +1903,8 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
                     webSocket.remoteIP(num)[0], webSocket.remoteIP(num)[1],
                     webSocket.remoteIP(num)[2], webSocket.remoteIP(num)[3]);
       {
-        // Add a small delay before sending to ensure connection is established
-        delay(10);
+        // The handshake is complete when this event fires; send the full
+        // status immediately so the new client has the current state
         String status = generateStatusJSON(true);
         // Send status to newly connected client with error checking
         if (webSocket.clientIsConnected(num)) {
@@ -1914,8 +1914,6 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       break;
     case WStype_DISCONNECTED:
       Serial.printf("WebSocket client #%u disconnected\n", num);
-      // Add a small delay to ensure proper cleanup
-      delay(10);
       break;
     case WStype_TEXT:
       Serial.printf("WebSocket client #%u text: %s\n", num, payload);
