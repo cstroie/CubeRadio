@@ -1682,33 +1682,6 @@ void handleMixer() {
 
 
 /**
- * @brief Handle export configuration request
- * Exports all JSON configuration files from SPIFFS as a single JSON object
- * This function reads all JSON files from SPIFFS and combines them into a single
- * JSON object where keys are filenames and values are file contents.
- */
-void handleExportConfig() {
-  yield();
-  // Use ArduinoJson to build the export object — avoids manual comma logic and
-  // produces valid JSON regardless of which files exist.
-  DynamicJsonDocument exportDoc(8192);
-  const char* configFiles[] = {"/config.json", "/wifi.json", "/playlist.json", "/player.json"};
-  for (int i = 0; i < 4; i++) {
-    const char* filename = configFiles[i];
-    DynamicJsonDocument fileDoc(PLAYLIST_BUFFER_SIZE);
-    if (readJsonFile(filename, PLAYLIST_BUFFER_SIZE, fileDoc)) {
-      // Key is the filename without the leading slash
-      exportDoc[filename + 1] = fileDoc.as<JsonVariant>();
-    }
-    yield();
-  }
-  String output;
-  serializeJson(exportDoc, output);
-  server.send(200, "application/json", output);
-  delay(1);
-}
-
-/**
  * @brief Handle import configuration request
  * Imports a combined JSON configuration file and saves individual files to SPIFFS
  * This function receives a JSON file containing all configurations and decomposes
@@ -2082,7 +2055,8 @@ void setupWebServer() {
   server.on("/api/mixer", HTTP_POST, handleMixer);
   server.on("/api/config", HTTP_GET, handleGetConfig);
   server.on("/api/config", HTTP_POST, handlePostConfig);
-  server.on("/api/config/export", HTTP_GET, handleExportConfig);
+  // /api/config/export deliberately removed: it returned wifi.json with
+  // cleartext passwords to any unauthenticated caller
   server.on("/api/config/import", HTTP_POST, handleImportConfig);
   server.on("/api/wifi/scan", HTTP_GET, handleWiFiScan);
   server.on("/api/wifi/save", HTTP_POST, handleWiFiSave);

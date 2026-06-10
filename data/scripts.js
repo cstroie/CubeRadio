@@ -1133,41 +1133,8 @@ async function saveConfig() {
   }
 }
 
-// Configuration import/export functions
-async function exportAllConfiguration() {
-  try {
-    const response = await fetch("/api/config/export");
-    if (response.ok) {
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "cuberadio-config-export.json";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } else {
-      // Try to parse JSON error response
-      let errorMessage = response.status;
-      try {
-        const errorData = await response.json();
-        if (errorData.message) {
-          errorMessage = errorData.message;
-        }
-      } catch (e) {
-        // If JSON parsing fails, use the status text
-        if (response.statusText) {
-          errorMessage = response.statusText;
-        }
-      }
-      showModal("Error exporting configurations", errorMessage);
-    }
-  } catch (error) {
-    console.error("Error exporting configurations:", error);
-    showModal("Error exporting configurations", error.message);
-  }
-}
+// Configuration import functions
+// (export removed: it exposed wifi.json passwords to any unauthenticated caller)
 
 // Handle import file selection
 function handleImportFileSelect() {

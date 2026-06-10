@@ -168,11 +168,10 @@
       </article>
       <article>
         <hgroup>
-          <h2>Configuration export and import</h2>
+          <h2>Configuration import</h2>
           <p>
-            Export or import all your CubeRadio configuration files (config.json,
-            wifi.json, playlist.json) as a single JSON file for backup or
-            transfer purposes.
+            Import CubeRadio configuration files (config.json, wifi.json,
+            playlist.json) from a single JSON file.
           </p>
         </hgroup>
         <div>
@@ -181,12 +180,9 @@
           <small>Supported formats: JSON</small>
         </div>
         <footer class="grid">
-          <button type="button" onclick="importAllConfiguration()" 
+          <button type="button" onclick="importAllConfiguration()"
                   id="import-button" disabled>
             Import configuration
-          </button>
-          <button type="button" onclick="exportAllConfiguration()">
-            Export configuration
           </button>
         </footer>
       </article>

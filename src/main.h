@@ -103,7 +103,6 @@ void handleGetStreams();
 void handlePostStreams();
 void handleGetConfig();
 void handlePostConfig();
-void handleExportConfig();
 void handleImportConfig();
 void handleWiFiScan();
 void handleWiFiSave();
