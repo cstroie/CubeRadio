@@ -1324,31 +1324,17 @@ void MPDInterface::handlePlayCommand(const String& args) {
 
 /**
  * @brief Handle the MPD kill command
- * @details This function processes the MPD "kill" command by restarting the
- * ESP32 device. This provides a way for MPD clients to trigger a system
- * restart through the standard MPD protocol.
- * 
- * The function implements MPD protocol compatibility by:
- * - Accepting the command without error
- * - Returning standard OK response before restart
- * - Flushing the client connection before restart
- * - Using ESP.restart() to perform system restart
- * 
- * Restart behavior:
- * - Sends OK response to acknowledge command
- * - Flushes client connection to ensure delivery
- * - Calls ESP.restart() to reboot the device
- * 
- * This command provides MPD clients with a standard way to restart the
- * CubeRadio device without requiring direct access to the web interface.
- * 
+ * @details Standard MPD "kill" reboots the server. Here it would let any
+ * unauthenticated client on the LAN/AP reboot the device at will (trivial
+ * DoS), and a networked radio appliance has no legitimate need for it. The
+ * command is accepted and ACKed for protocol compatibility but no longer
+ * reboots; reset is available physically or via OTA.
+ *
  * @param args Command arguments (not used for kill command)
  */
 void MPDInterface::handleKillCommand(const String& args) {
+  // Intentionally does not reboot — see above
   mpdClient.print(mpdResponseOK());
-  mpdClient.flush();
-  // Use ESP32 restart function
-  ESP.restart();
 }
 
 /**
