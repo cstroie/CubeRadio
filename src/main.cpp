@@ -2440,6 +2440,12 @@ void setup() {
   Serial.println("MPD server started");
   
   // Setup ArduinoOTA
+  // Require a password so network flashing isn't open to anyone on the LAN/AP.
+  // Override at build time with -DOTA_PASSWORD=\"yourpass\".
+  #ifndef OTA_PASSWORD
+  #define OTA_PASSWORD "CubeRadio"
+  #endif
+  ArduinoOTA.setPassword(OTA_PASSWORD);
   ArduinoOTA
     .onStart([]() {
       String type;
