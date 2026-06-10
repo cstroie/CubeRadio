@@ -176,12 +176,16 @@ void Player::setStreamIconUrl(const char* iconUrl) {
  * @brief Clear all stream information
  */
 void Player::clearStreamInfo() {
+  // Take the spinlock like the setters do: core 0 callbacks may be writing
+  // (and core 1 snapshot readers reading) these fields concurrently
+  taskENTER_CRITICAL(&spinlock);
   streamInfo.url[0] = '\0';
   streamInfo.name[0] = '\0';
   streamInfo.title[0] = '\0';
   streamInfo.icyUrl[0] = '\0';
   streamInfo.iconUrl[0] = '\0';
   streamInfo.bitrate = 0;
+  taskEXIT_CRITICAL(&spinlock);
 }
 
 /**
@@ -455,12 +459,11 @@ void Player::startStream(const char* url, const char* name) {
     Serial.println("Error: Invalid URL format");
     return;
   }
-  // Keep the stream url and name if they are new
+  // Keep the stream url and name if they are new (locked setters: core 0
+  // callbacks and snapshot readers touch the same struct)
   if (!resume) {
-    strncpy(streamInfo.url, url, sizeof(streamInfo.url) - 1);
-    streamInfo.url[sizeof(streamInfo.url) - 1] = '\0';
-    strncpy(streamInfo.name, name, sizeof(streamInfo.name) - 1);
-    streamInfo.name[sizeof(streamInfo.name) - 1] = '\0';
+    setStreamUrl(url);
+    setStreamName(name);
   }
   // Turn on LED when playing (if LED pin is configured)
   if (config.led_pin >= 0) {
