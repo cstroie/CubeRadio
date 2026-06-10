@@ -852,10 +852,14 @@ void MPDInterface::handlePlaylistInfoCommand(const String& args) {
  * @param args Command arguments (not used for currentsong command)
  */
 void MPDInterface::handleCurrentSongCommand(const String& args) {
-  if (this->player.isPlaying() && strlen(this->player.getStreamName()) > 0) {
-    mpdClient.print("file: " + String(this->player.getStreamUrl()) + "\n");
-    if (strlen(this->player.getStreamTitle()) > 0) {
-      String streamTitleStr = String(this->player.getStreamTitle());
+  // Snapshot under the spinlock: core 0 callbacks may be rewriting the
+  // strings while this response is assembled
+  StreamInfoData info;
+  this->player.getStreamInfoSnapshot(info);
+  if (this->player.isPlaying() && strlen(info.name) > 0) {
+    mpdClient.print("file: " + String(info.url) + "\n");
+    if (strlen(info.title) > 0) {
+      String streamTitleStr = String(info.title);
       // Check if stream title contains " - " separator for artist/track parsing
       int separatorPos = streamTitleStr.indexOf(" - ");
       if (separatorPos != -1) {
@@ -870,7 +874,7 @@ void MPDInterface::handleCurrentSongCommand(const String& args) {
       }
     } else {
       // No stream title, use stream name as fallback
-      mpdClient.print("Title: " + String(this->player.getStreamName()) + "\n");
+      mpdClient.print("Title: " + String(info.name) + "\n");
     }
     mpdClient.print("Album: WebRadio\n");
     mpdClient.print("Id: " + String(this->player.getPlaylistIndex()) + "\n");
@@ -1374,10 +1378,13 @@ void MPDInterface::handleKillCommand(const String& args) {
  */
 void MPDInterface::handleIdleCommand(const String& args) {
   inIdleMode = true;
-  // Initialize hashes for tracking changes
+  // Initialize hashes for tracking changes; hash a snapshot so a core 0
+  // callback rewriting the title mid-loop can't produce a phantom change
+  StreamInfoData info;
+  this->player.getStreamInfoSnapshot(info);
   lastTitleHash = 0;
-  for (int i = 0; this->player.getStreamTitle()[i]; i++) {
-    lastTitleHash = lastTitleHash * 31 + this->player.getStreamTitle()[i];
+  for (int i = 0; info.title[i]; i++) {
+    lastTitleHash = lastTitleHash * 31 + info.title[i];
   }
   lastStatusHash = this->player.isPlaying() ? 1 : 0;
   lastStatusHash = lastStatusHash * 31 + this->player.getVolume();
@@ -1744,9 +1751,13 @@ void MPDInterface::handleClient() {
 void MPDInterface::handleIdleMode() {
   // Check for title changes using hash computation
   // Uses polynomial rolling hash with base 31 for good distribution
+  // Hash a snapshot so a core 0 callback rewriting the title mid-loop can't
+  // produce a torn hash and a spurious (or missed) idle notification
+  StreamInfoData info;
+  this->player.getStreamInfoSnapshot(info);
   unsigned long currentTitleHash = 0;
-  for (int i = 0; this->player.getStreamTitle()[i]; i++) {
-    currentTitleHash = currentTitleHash * 31 + this->player.getStreamTitle()[i];
+  for (int i = 0; info.title[i]; i++) {
+    currentTitleHash = currentTitleHash * 31 + info.title[i];
   }
   // Check for status changes using hash computation
   // Combines playing status (boolean) and volume (0-22) into a single hash
