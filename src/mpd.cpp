@@ -1470,17 +1470,26 @@ void MPDInterface::handleCommandListOkBeginCommand(const String& args) {
  */
 void MPDInterface::handleCommandListEndCommand(const String& args) {
   if (inCommandList) {
-    // Execute all buffered commands
+    // Execute all buffered commands, stopping at the first failure as the
+    // MPD spec requires; the failing command has already sent its ACK
+    commandFailed = false;
+    bool listFailed = false;
     for (int i = 0; i < commandListCount; i++) {
       // Yield to allow other tasks to run
       yield();
       handleMPDCommand(commandList[i]);
+      if (commandFailed) {
+        listFailed = true;
+        break;
+      }
     }
     // Reset command list state
     inCommandList = false;
     commandListOK = false;
     commandListCount = 0;
-    mpdClient.print(mpdResponseOK());
+    if (!listFailed) {
+      mpdClient.print(mpdResponseOK());
+    }
   } else {
     mpdClient.print(mpdResponseError("command_list", "Not in command list mode"));
   }
@@ -1926,17 +1935,26 @@ void MPDInterface::handleAsyncCommands() {
  */
 void MPDInterface::handleCommandList(const String& command) {
   if (command == "command_list_end") {
-    // Execute all buffered commands
+    // Execute all buffered commands, stopping at the first failure as the
+    // MPD spec requires; the failing command has already sent its ACK
+    commandFailed = false;
+    bool listFailed = false;
     for (int i = 0; i < commandListCount; i++) {
       // Yield to allow other tasks to run
       yield();
       handleMPDCommand(commandList[i]);
+      if (commandFailed) {
+        listFailed = true;
+        break;
+      }
     }
     // Reset command list state
     inCommandList = false;
     commandListOK = false;
     commandListCount = 0;
-    mpdClient.print(mpdResponseOK());
+    if (!listFailed) {
+      mpdClient.print(mpdResponseOK());
+    }
   } else {
     // Buffer the command
     if (commandListCount < MAX_COMMAND_LIST_SIZE) {
@@ -2004,6 +2022,8 @@ String MPDInterface::mpdResponseOK() {
  * @return Error response string in MPD format
  */
 String MPDInterface::mpdResponseError(const String& command, const String& message) {
+  // Record the failure so command list execution can abort per the MPD spec
+  commandFailed = true;
   // Determine appropriate error code based on message content
   int errorCode = 5; // Default to ACK_ERROR_NO_EXIST
   // Map common error conditions to appropriate MPD error codes
