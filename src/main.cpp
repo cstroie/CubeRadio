@@ -2448,6 +2448,10 @@ void setup() {
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
       display->showStatus("OTA Update", "Starting...", type.c_str());
+      // Stop streaming and park the audio task so the update doesn't
+      // compete with the radio for WiFi bandwidth and CPU
+      player.stopStream(false);
+      pauseAudioTask();
       // Unmount SPIFFS during OTA
       SPIFFS.end();
     })
@@ -2470,6 +2474,9 @@ void setup() {
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
       display->showStatus("OTA Update", "Failed", "Error");
+      // The device keeps running after a failed OTA: undo onStart's prep
+      SPIFFS.begin();
+      resumeAudioTask();
     });
   // Start ArduinoOTA
   ArduinoOTA.begin();
