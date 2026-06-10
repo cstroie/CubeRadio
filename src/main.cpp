@@ -1342,6 +1342,9 @@ void handlePostStreams() {
     }
   }
   player.savePlaylist();
+  // Refresh WebSocket clients and the OLED (it may show the selected name)
+  updateDisplay();
+  sendStatusToClients();
   sendJsonResponse("success", "Playlist updated successfully");
 }
 
