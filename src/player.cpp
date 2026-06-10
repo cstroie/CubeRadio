@@ -480,9 +480,16 @@ void Player::startStream(const char* url, const char* name) {
     resumeAudioTask();
     if (!audioConnected) {
       Serial.println("Error: Failed to connect to audio stream");
-      playerState.playing = false;
-      clearStreamInfo();
-      if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
+      if (resume) {
+        // Watchdog/resume reconnect failed (e.g. momentary network blip):
+        // keep streamInfo and playing=true so the main-loop watchdog keeps
+        // retrying instead of permanently dropping the station
+        Serial.println("Keeping stream state for retry");
+      } else {
+        playerState.playing = false;
+        clearStreamInfo();
+        if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
+      }
     } else {
       playerState.playing = true;
       // Track play time (store raw millis so subtraction wraps safely)
