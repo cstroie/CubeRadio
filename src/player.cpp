@@ -331,6 +331,9 @@ void Player::removePlaylistItem(int index) {
 void Player::clearPlaylist() {
   playlist->clear();
   playlistVersion++;
+  // No items left — a stale index would be persisted and clamped to 0 on
+  // reboot, resuming the wrong station after the playlist is replaced
+  playerState.playlistIndex = -1;
 }
 
 /**

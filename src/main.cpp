@@ -1328,6 +1328,14 @@ void handlePostStreams() {
   for (JsonObject item : array) {
     player.addPlaylistItem(item["name"], item["url"]);
   }
+  // clearPlaylist() reset the index; re-resolve it by matching the currently
+  // playing stream URL against the new list (stays -1 if not found)
+  for (int i = 0; i < player.getPlaylistCount(); i++) {
+    if (strcmp(player.getPlaylistItem(i).url, player.getStreamUrl()) == 0) {
+      player.setPlaylistIndex(i);
+      break;
+    }
+  }
   player.savePlaylist();
   sendJsonResponse("success", "Playlist updated successfully");
 }
