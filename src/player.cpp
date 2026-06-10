@@ -492,6 +492,12 @@ void Player::startStream(const char* url, const char* name) {
       }
     } else {
       playerState.playing = true;
+      // A resume skips stopStream(): bank the elapsed segment before
+      // resetting the start time, or it would be lost from totalPlayTime
+      if (playerState.playStartTime > 0) {
+        playerState.totalPlayTime += (millis() - playerState.playStartTime) / 1000;
+        setDirty();
+      }
       // Track play time (store raw millis so subtraction wraps safely)
       playerState.playStartTime = millis();
       Serial.println("Successfully connected to audio stream");
