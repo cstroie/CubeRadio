@@ -6,6 +6,20 @@ CubeRadio is an ESP32 internet radio player firmware. It streams internet radio 
 
 ---
 
+## Bug-Fixing Routine
+
+When fixing a list of reviewed issues, work **one issue at a time**:
+
+1. Take the next issue from the list (highest severity first).
+2. Fix it as a minimal, focused change.
+3. Build it (`pio run`) to verify it compiles.
+4. Commit just that fix with a `fix:` message describing the issue.
+5. Move on to the next issue.
+
+Never batch multiple unrelated fixes into one commit.
+
+---
+
 ## Build System
 
 **PlatformIO** (`platformio.ini`) — three environments:
