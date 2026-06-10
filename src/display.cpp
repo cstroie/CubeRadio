@@ -438,6 +438,11 @@ bool Display::isOn() const {
  */
 void Display::handleTimeout(bool isPlaying, unsigned long currentTime) {
     extern Config config;
+    // A timeout of 0 means "never turn off" — without this guard the display
+    // blanked on the first loop tick after playback stopped
+    if (config.display_timeout <= 0) {
+        return;
+    }
     const unsigned long DISPLAY_TIMEOUT = config.display_timeout * 1000; // Convert seconds to milliseconds
     // Handle potential millis() overflow by resetting activity time
     if (currentTime < lastActivityTime) {
