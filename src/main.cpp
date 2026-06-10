@@ -239,6 +239,13 @@ void audio_eof_stream(const char *info) {
 void audio_error_on_connect(const char *info) {
   Serial.print("Audio connection error: ");
   Serial.println(info ? info : "");
+  // Accumulate play time like audio_eof_stream does, so a stale
+  // playStartTime can't inflate totalPlayTime later
+  if (player.getPlayStartTime() > 0) {
+    player.addPlayTime((millis() - player.getPlayStartTime()) / 1000);
+    player.setPlayStartTime(0);
+    player.setDirty();
+  }
   player.setPlaying(false);
   if (config.led_pin >= 0) digitalWrite(config.led_pin, LOW);
   pendingCallbackUpdate = true;

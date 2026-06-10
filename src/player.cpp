@@ -485,7 +485,9 @@ void Player::startStream(const char* url, const char* name) {
       if (resume) {
         // Watchdog/resume reconnect failed (e.g. momentary network blip):
         // keep streamInfo and playing=true so the main-loop watchdog keeps
-        // retrying instead of permanently dropping the station
+        // retrying instead of permanently dropping the station. Set playing
+        // explicitly — audio_error_on_connect already cleared it.
+        playerState.playing = true;
         Serial.println("Keeping stream state for retry");
       } else {
         playerState.playing = false;
