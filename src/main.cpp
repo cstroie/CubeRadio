@@ -871,7 +871,7 @@ void boardButtonISR() {
 void handleBoardButton() {
   // Only handle board button if it's configured (not negative)
   // and not the same as rotary switch
-  if (config.board_button < 0 && config.board_button != config.rotary_sw) {
+  if (config.board_button < 0 || config.board_button == config.rotary_sw) {
     return;
   }
   // Check if button was pressed (detected by interrupt)
