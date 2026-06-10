@@ -108,7 +108,11 @@ Display::Display(Adafruit_SSD1306& display, enum display_t displayTypeEnum) :
  * This method must be called before any other display operations.
  */
 void Display::begin() {
-  displayRef.begin(SSD1306_SWITCHCAPVCC, config.display_address);
+  if (!displayRef.begin(SSD1306_SWITCHCAPVCC, config.display_address)) {
+    Serial.printf("Warning: SSD1306 init failed (address 0x%02X) — display disabled\n",
+                  config.display_address);
+    return;
+  }
   showLogo();
 }
 
