@@ -504,18 +504,22 @@ void handleWiFiSave() {
     }
   }
   
+  // Parse the new networks into local buffers first, so a validation error
+  // mid-array cannot leave the global credentials half-overwritten
+  char newSsid[MAX_WIFI_NETWORKS][64] = {""};
+  char newPassword[MAX_WIFI_NETWORKS][64] = {""};
+  int newNetworkCount = 0;
   // Handle the new JSON array format [{"ssid": "name", "password": "pass"}, ...]
-  wifiNetworkCount = 0;
   if (doc.is<JsonArray>()) {
     JsonArray networks = doc.as<JsonArray>();
     for (JsonObject network : networks) {
-      if (wifiNetworkCount >= MAX_WIFI_NETWORKS) break;
+      if (newNetworkCount >= MAX_WIFI_NETWORKS) break;
       // Handle required SSID
       if (network.containsKey("ssid")) {
         const char* ssidValue = network["ssid"];
-        if (ssidValue && strlen(ssidValue) > 0 && strlen(ssidValue) < sizeof(ssid[wifiNetworkCount])) {
-          strncpy(ssid[wifiNetworkCount], ssidValue, sizeof(ssid[wifiNetworkCount]) - 1);
-          ssid[wifiNetworkCount][sizeof(ssid[wifiNetworkCount]) - 1] = '\0';
+        if (ssidValue && strlen(ssidValue) > 0 && strlen(ssidValue) < sizeof(newSsid[newNetworkCount])) {
+          strncpy(newSsid[newNetworkCount], ssidValue, sizeof(newSsid[newNetworkCount]) - 1);
+          newSsid[newNetworkCount][sizeof(newSsid[newNetworkCount]) - 1] = '\0';
         } else {
           sendJsonResponse("error", "Invalid SSID");
           return;
@@ -524,31 +528,34 @@ void handleWiFiSave() {
         if (network.containsKey("password")) {
           // Use provided password
           const char* pwdValue = network["password"];
-          if (pwdValue && strlen(pwdValue) < sizeof(password[wifiNetworkCount])) {
-            strncpy(password[wifiNetworkCount], pwdValue, sizeof(password[wifiNetworkCount]) - 1);
-            password[wifiNetworkCount][sizeof(password[wifiNetworkCount]) - 1] = '\0';
+          if (pwdValue && strlen(pwdValue) < sizeof(newPassword[newNetworkCount])) {
+            strncpy(newPassword[newNetworkCount], pwdValue, sizeof(newPassword[newNetworkCount]) - 1);
+            newPassword[newNetworkCount][sizeof(newPassword[newNetworkCount]) - 1] = '\0';
           } else {
-            password[wifiNetworkCount][0] = '\0';
+            newPassword[newNetworkCount][0] = '\0';
           }
         } else {
           // Look for existing password for this SSID
-          bool found = false;
           for (int i = 0; i < existingNetworkCount; i++) {
             if (strcmp(existingSsid[i], ssidValue) == 0) {
-              strncpy(password[wifiNetworkCount], existingPassword[i], sizeof(password[wifiNetworkCount]) - 1);
-              password[wifiNetworkCount][sizeof(password[wifiNetworkCount]) - 1] = '\0';
-              found = true;
+              strncpy(newPassword[newNetworkCount], existingPassword[i], sizeof(newPassword[newNetworkCount]) - 1);
+              newPassword[newNetworkCount][sizeof(newPassword[newNetworkCount]) - 1] = '\0';
               break;
             }
           }
-          if (!found) {
-            password[wifiNetworkCount][0] = '\0';
-          }
         }
         // Increment network count
-        wifiNetworkCount++;
+        newNetworkCount++;
       }
     }
+  }
+  // All entries valid — commit to the global credentials
+  wifiNetworkCount = newNetworkCount;
+  for (int i = 0; i < newNetworkCount; i++) {
+    strncpy(ssid[i], newSsid[i], sizeof(ssid[i]) - 1);
+    ssid[i][sizeof(ssid[i]) - 1] = '\0';
+    strncpy(password[i], newPassword[i], sizeof(password[i]) - 1);
+    password[i][sizeof(password[i]) - 1] = '\0';
   }
   // Save updated credentials to SPIFFS
   saveWiFiCredentials();
