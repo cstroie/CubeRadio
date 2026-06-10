@@ -310,7 +310,8 @@ void Display::update(bool isPlaying, const char* streamTitle, const char* stream
             printAt("CubeRadio", 0, updateLayout[displayType][0], 'c');
             lineStream = 1;
         }
-        // Display current stream name (second line) or selected playlist item if none selected
+        // Display current stream name (or the selected playlist item, which
+        // the caller passes in streamName when nothing is playing)
         if (strlen(streamName) > 0) {
             String currentStream = String(streamName);
             if (currentStream.length() > 16) {
@@ -319,17 +320,7 @@ void Display::update(bool isPlaying, const char* streamTitle, const char* stream
                 printAt(currentStream, 0, updateLayout[displayType][lineStream], 'l');
             }
         } else {
-            // Show the currently selected playlist item (passed in streamName parameter)
-            if (strlen(streamName) > 0) {
-                String selectedStream = String(streamName);
-                if (selectedStream.length() > 16) {
-                    printAt(selectedStream.substring(0, 16), 0, updateLayout[displayType][lineStream], 'l');
-                } else {
-                    printAt(selectedStream, 0, updateLayout[displayType][lineStream], 'l');
-                }
-            } else {
-                printAt("No stream", 0, updateLayout[displayType][lineStream], 'c');
-            }
+            printAt("No stream", 0, updateLayout[displayType][lineStream], 'c');
         }
         // Display volume on third line (only for displays with sufficient height)
         if (updateLayout[displayType][2] > 0) {
