@@ -1162,14 +1162,19 @@ void MPDInterface::handleVolumeCommand(const String& args) {
       mpdClient.print(mpdResponseError("volume", "Volume change out of range"));
       return;
     }
+    // A relative change of 0 is a no-op, not a +1 bump
+    if (volumeChange == 0) {
+      mpdClient.print(mpdResponseOK());
+      return;
+    }
     // Get volume change as value for MPD compatibility
     int volumeChangeMPD = map(abs(volumeChange), 0, 100, 0, 22);
-    // If the volume change is less than 1 after mapping, use 1 to ensure a change
+    // A nonzero requested change must still move the volume by at least 1
     if (volumeChangeMPD < 1)
       volumeChangeMPD = 1;
     // Apply the original sign to the mapped value
-      if (volumeChange < 0)
-        volumeChangeMPD = -volumeChangeMPD;
+    if (volumeChange < 0)
+      volumeChangeMPD = -volumeChangeMPD;
     // Apply the volume change
     this->player.setVolume(this->player.getVolume() + volumeChangeMPD);
     updateDisplay();
