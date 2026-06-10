@@ -1613,8 +1613,8 @@ const MPDInterface::MPDCommand MPDInterface::commandRegistry[] = {
   {"list", &MPDInterface::handleListCommand, false},
   {"search", &MPDInterface::handleSearchCommand, false},
   {"find", &MPDInterface::handleFindCommand, false},
-  {"seek", &MPDInterface::handleSeekCommand, false},
   {"seekid", &MPDInterface::handleSeekIdCommand, false},
+  {"seek", &MPDInterface::handleSeekCommand, false},
   {"tagtypes", &MPDInterface::handleTagTypesCommand, false},
   {"plchanges", &MPDInterface::handlePlChangesCommand, false},
   {"idle", &MPDInterface::handleIdleCommand, true},
@@ -1677,12 +1677,6 @@ void MPDInterface::handleClient() {
                 newClient.stop();
             }
             return;
-        }
-        // Properly close existing client first
-        if (mpdClient && mpdClient.connected()) {
-            mpdClient.flush();
-            delay(1);
-            mpdClient.stop();
         }
         // Accept the new client connection
         mpdClient = mpdServer.available();
