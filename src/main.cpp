@@ -2195,7 +2195,11 @@ void loop() {
   if (player.getAudioObject()) {
     // Check if audio is still connected
     if (player.isPlaying()) {
-      if (!player.isRunning()) {
+      // Give a freshly started stream 5 s of grace: isRunning() is false while
+      // the library follows HTTP redirects, and restarting then caused
+      // duplicate connects on every station start.
+      bool inStartupGrace = millis() - player.getPlayStartTime() < 5000;
+      if (!player.isRunning() && !inStartupGrace) {
         Serial.println("Audio stream stopped unexpectedly");
         // Attempt to restart the stream if it was playing
         if (strlen(player.getStreamUrl()) > 0) {
