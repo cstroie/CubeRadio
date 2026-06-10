@@ -1203,7 +1203,7 @@ void handleSimpleWebPage() {
     html += "<p><b>Now playing:</b> ";
     html += htmlEscape(player.getStreamTitle());
     html += "</p>";
-  } else if (!player.isPlaying() && player.getPlaylistCount() > 0 && player.getPlaylistIndex() < player.getPlaylistCount()) {
+  } else if (!player.isPlaying() && player.isPlaylistIndexValid()) {
     html += "<p><b>Selected:</b> ";
     html += htmlEscape(player.getPlaylistItem(player.getPlaylistIndex()).name);
     html += "</p>";
