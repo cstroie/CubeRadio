@@ -481,7 +481,13 @@ void handleWiFiSave() {
     sendJsonResponse("error", "Invalid JSON");
     return;
   }
-  
+  // A non-array body would skip the parse loop below and commit an empty
+  // list, silently erasing every saved network
+  if (!doc.is<JsonArray>()) {
+    sendJsonResponse("error", "JSON root must be an array");
+    return;
+  }
+
   // Load existing credentials to preserve passwords when not provided
   char existingSsid[MAX_WIFI_NETWORKS][64] = {""};
   char existingPassword[MAX_WIFI_NETWORKS][64] = {""};
