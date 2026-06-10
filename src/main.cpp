@@ -1203,8 +1203,11 @@ void handleSimpleWebPage() {
     }
   }
   
-  // Create HTML response using precomputed strings to minimize fragmentation
-  String html = "<!DOCTYPE html><html><head><title>CubeRadio</title>";
+  // Create HTML response using precomputed strings to minimize fragmentation;
+  // reserve the full page size up front to avoid dozens of reallocations
+  String html;
+  html.reserve(4096 + strlen(playlistOptions) + strlen(volumeOptions));
+  html = "<!DOCTYPE html><html><head><title>CubeRadio</title>";
   html += "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css\">";
   html += "</head><body><header><h1>CubeRadio</h1></header><main>";
   html += "<section><h2>Status: ";
