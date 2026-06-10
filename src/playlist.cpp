@@ -127,6 +127,11 @@ void Playlist::setItem(int index, const char* name, const char* url) {
     Serial.println("Warning: Skipping stream with invalid URL format in setItem");
     return;
   }
+  // A truncated URL would still look valid but never connect
+  if (strlen(url) >= STREAM_URL_SIZE) {
+    Serial.println("Warning: Skipping stream with too long URL in setItem");
+    return;
+  }
   SAFE_STRNCPY(playlist[index].name, name, STREAM_NAME_SIZE);
   SAFE_STRNCPY(playlist[index].url,  url,  STREAM_URL_SIZE);
   if (index == count) {
@@ -146,6 +151,11 @@ bool Playlist::addItem(const char* name, const char* url) {
   }
   if (!name || !url || strlen(url) == 0 || !VALIDATE_URL(url)) {
     Serial.println("Warning: Skipping stream with invalid URL format in addItem");
+    return false;
+  }
+  // A truncated URL would still look valid but never connect
+  if (strlen(url) >= STREAM_URL_SIZE) {
+    Serial.println("Warning: Skipping stream with too long URL in addItem");
     return false;
   }
   SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);

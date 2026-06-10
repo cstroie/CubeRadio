@@ -1322,6 +1322,11 @@ void handlePostStreams() {
       sendJsonResponse("error", "Invalid URL format");
       return;
     }
+    // Reject instead of silently truncating to a URL that can never connect
+    if (strlen(url) >= STREAM_URL_SIZE) {
+      sendJsonResponse("error", "URL too long (max 255 characters)");
+      return;
+    }
   }
   // All entries valid — now replace the in-memory playlist
   player.clearPlaylist();
