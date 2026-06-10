@@ -853,7 +853,7 @@ void audioTask(void *pvParameters) {
  * @brief Interrupt service routine for board button
  * Sets a flag when the board button is pressed
  */
-void boardButtonISR() {
+void IRAM_ATTR boardButtonISR() {
   static unsigned long lastInterruptTime = 0;
   unsigned long interruptTime = millis();
   // Debounce the button press (ignore if less than 50ms since last press)

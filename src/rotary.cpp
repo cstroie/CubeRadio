@@ -26,7 +26,7 @@ extern RotaryEncoder rotaryEncoder;
  * @brief Interrupt service routine for rotary encoder
  * Handles rotary encoder rotation events
  */
-void rotaryISR() {
+void IRAM_ATTR rotaryISR() {
   rotaryEncoder.handleRotation();
 }
 
@@ -34,7 +34,7 @@ void rotaryISR() {
  * @brief Interrupt service routine for rotary switch button
  * Handles rotary switch button press events
  */
-void rotarySwISR() {
+void IRAM_ATTR rotarySwISR() {
   rotaryEncoder.handleButtonPress();
 }
 
@@ -68,7 +68,7 @@ void setupRotaryEncoder() {
  * Only processes events when CLK transitions from HIGH to LOW to avoid
  * double-counting.
  */
-void RotaryEncoder::handleRotation() {
+void IRAM_ATTR RotaryEncoder::handleRotation() {
   unsigned long currentTime = millis();
   // Debounce rotary encoder (ignore if less than 100ms since last event)
   if (currentTime - lastRotaryTime < 100) {
@@ -100,7 +100,7 @@ void RotaryEncoder::handleRotation() {
  * function is triggered by an interrupt on the falling edge, so we only need
  * to implement debouncing based on time since last interrupt.
  */
-void RotaryEncoder::handleButtonPress() {
+void IRAM_ATTR RotaryEncoder::handleButtonPress() {
   unsigned long interruptTime = millis();
   // Debounce the button press (ignore if less than 100ms since last press)
   // This prevents multiple detections from a single physical button press
