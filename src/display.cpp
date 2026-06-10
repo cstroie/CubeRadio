@@ -259,13 +259,11 @@ void Display::update(bool isPlaying, const char* streamTitle, const char* stream
                 titleScrollText = title;
                 titleScrollOffset = 0;
             }
-            // Scroll every 500ms for smooth animation
+            // Scroll every 500ms for smooth animation. The cycle length is
+            // title plus the 5-char " ~~~ " separator; wrapping at +4 ended
+            // the loop one character early and made the text jump at the seam.
             if (millis() - lastTitleScrollTime > 500) {
-                titleScrollOffset = (titleScrollOffset + 1) % (title.length() + 4);
-                // Reset scroll when we've shown the entire text plus " ~~~ "
-                if (titleScrollOffset > (int)(title.length() + 4)) {  // +4 for " ~~~ "
-                    titleScrollOffset = 0;
-                }
+                titleScrollOffset = (titleScrollOffset + 1) % (title.length() + 5);
                 lastTitleScrollTime = millis();
             }
             // Display scrolled text
