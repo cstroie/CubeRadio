@@ -44,7 +44,7 @@ private:
   volatile int position = 0;                    ///< Current rotary encoder position counter
   volatile unsigned long lastRotaryTime = 0;    ///< Last rotary event timestamp for debouncing
   volatile unsigned long lastInterruptTime = 0; ///< Last button interrupt timestamp for debouncing
-  bool buttonPressedFlag = false;               ///< Flag indicating button press detected
+  volatile bool buttonPressedFlag = false;      ///< Flag indicating button press detected
 
 public:
   /**
