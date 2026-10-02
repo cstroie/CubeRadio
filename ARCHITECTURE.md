@@ -62,9 +62,9 @@
                     ┌────────────────────┐
                     │  Playlist          │  playlist.cpp / playlist.h
                     │                    │
-                    │  StreamInfo[20]    │  {name[96], url[128]}
-                    │  load() / save()   │  ← /playlist.json (SPIFFS)
-                    │  validate()        │
+                    │  offsets[500]      │  file offset per entry
+                    │  getItem/forEach   │  ← /playlist.jsonl (SPIFFS)
+                    │  upload (stream)   │  validated, swapped in
                     └────────────────────┘
 
                     ┌────────────────────┐
@@ -72,7 +72,7 @@
                     │                    │
                     │  /config.json      │  Config struct ↔ web UI
                     │  /wifi.json        │  SSID/pass, max 5
-                    │  /playlist.json    │  stations, max 20
+                    │  /playlist.jsonl   │  stations, max 500
                     │  /player.json      │  PlayerState persistence
                     │  /player.html …    │  static web assets
                     └────────────────────┘
@@ -110,7 +110,7 @@ and `StreamInfoData`. All control paths (web, MPD, physical) call into `Player`.
 - Lifecycle: `setupAudioOutput()`, `startStream()`, `stopStream()`
 - State: getters/setters for playing, volume, tone, playlist index, stream info
 - Persistence: `loadPlayerState()` / `savePlayerState()` with dirty-flag batching
-- Playlist delegation: `loadPlaylist()`, `savePlaylist()`, `addPlaylistItem()`, …
+- Playlist delegation: `loadPlaylist()`, `getPlaylistItem()`, `forEachPlaylistItem()`, `findPlaylistUrl()`, playlist upload
 - Audio tick: `handleAudio()` → `audio->loop()` (called from FreeRTOS task)
 - Bitrate polling: `updateBitrate()` reads live value from Audio object
 - Thread safety: `portMUX_TYPE spinlock` guards shared state between core 0 (audio task) and core 1 (main loop)
@@ -121,13 +121,15 @@ and `StreamInfoData`. All control paths (web, MPD, physical) call into `Player`.
 
 ### 3. `Playlist` — Station List
 
-Simple fixed-capacity array of `StreamInfo {name[96], url[128]}`, max 20 items.
+Up to 500 `StreamInfo {name[96], url[256]}` entries kept in `/playlist.jsonl`
+(one JSON object per line), not in RAM.
 
 **Responsibilities:**
-- Load from / save to `/playlist.json` via ArduinoJson
-- `validate()` — clamp `current` index, remove entries with empty URL
-- Add, remove, set, clear individual items
-- Track `current` index (kept in sync with `PlayerState.playlistIndex`)
+- `load()` — index the file: 4-byte offset per valid line; migrates a legacy `/playlist.json`
+- `getItem(i)` — read one entry on demand into a one-entry cache
+- `forEach(fn)` / `findByUrl()` — single pass over the file (MPD listings, search, `/w`, GET `/api/streams`)
+- `beginUpload()` / `writeUpload()` / `endUpload()` — stream a new playlist into
+  `/playlist.tmp`, validate every line, swap it in only if all lines are valid
 
 ---
 
@@ -202,15 +204,14 @@ Up to three capacitive touch buttons (play, next, prev), all optional (pin = -1 
 | `GET /api/player` | `generateStatusJSON` | none |
 | `POST /api/player` | parse action/url/index → `player.startStream()` / `stopStream()` | saves state, notifies clients |
 | `GET/POST /api/mixer` | read/write volume + tone | saves state |
-| `GET/POST /api/streams` | read/write playlist JSON | saves playlist |
+| `GET/POST /api/streams` | stream playlist as JSON Lines / raw upload into SPIFFS | replaces playlist |
 | `GET/POST /api/config` | read/write `Config` struct | saves config, reinit hardware |
-| `GET /api/config/export` | bundle all JSON files | read-only |
-| `POST /api/config/import` | unbundle + write all files | rewrites all configs |
+| `POST /api/config/import` | unbundle + write config/wifi/player | rewrites configs |
 | `GET /api/wifi/scan` | `WiFi.scanNetworks()` | blocking scan |
 | `POST /api/wifi/save` | write `wifi.json` | reconnects |
 | `GET /api/wifi/status` | current connection info | none |
 | `GET /api/proxy` | `HTTPClient` fetch | proxy for CORS |
-| `GET/POST /w` | `handleSimpleWebPage()` | fallback control UI |
+| `GET/POST /w` | `handleSimpleWebPage()` | fallback control UI, sent in chunks |
 
 Static assets served from SPIFFS via `server.serveStatic()`.
 
@@ -246,7 +247,7 @@ All configuration is stored as JSON files on SPIFFS.
 |------|-------|---------|
 | `/config.json` | `Config` struct | `saveConfig()` |
 | `/wifi.json` | `ssid[]`/`password[]` arrays | `saveWiFiCredentials()` |
-| `/playlist.json` | `Playlist` | `Playlist::save()` |
+| `/playlist.jsonl` | `Playlist` | `Playlist::endUpload()` |
 | `/player.json` | `PlayerState` | `Player::savePlayerState()` |
 
 **Dirty-flag batching:** `PlayerState.dirty` is set on any state change; `savePlayerState()` is called explicitly after user actions (not on every loop tick) to avoid excessive SPIFFS writes.
@@ -296,15 +297,15 @@ Board-specific compile-time defaults are in `pins_wroom.h`, `pins_wrover.h`, `pi
 | Constant | Value | Location |
 |----------|-------|----------|
 | `MAX_WIFI_NETWORKS` | 5 | `main.h` |
-| `MAX_PLAYLIST_SIZE` | 20 | `main.h` |
+| `MAX_PLAYLIST_SIZE` | 500 | `main.h` |
 | `STREAM_NAME_SIZE` | 96 | `playlist.h` |
-| `STREAM_URL_SIZE` | 128 | `playlist.h` |
+| `STREAM_URL_SIZE` | 256 | `playlist.h` |
+| `PLAYLIST_LINE_MAX` | 1024 B | `playlist.h` |
 | `StreamInfoData::url` | 256 | `player.h` |
 | `StreamInfoData::name` | 128 | `player.h` |
 | `StreamInfoData::title` | 128 | `player.h` |
 | `MAX_COMMAND_LIST_SIZE` | 20 (cap 50) | `mpd.h` |
 | `PLAYER_STATE_BUFFER_SIZE` | 512 B | `player.h` |
-| `PLAYLIST_BUFFER_SIZE` | 4096 B | `player.h` / `main.h` |
 | Main loop delay | 150 ms | `main.cpp` |
 | Display update interval | 500 ms | `main.cpp` |
 | WebSocket status interval | 3 s | `main.cpp` |

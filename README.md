@@ -16,10 +16,10 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 - **Web Interface**: Control playback through a responsive web UI
 - **Physical Controls**: Rotary encoder for volume control and navigation
 - **OLED Display**: Real-time status information with scrolling text
-- **Playlist Management**: Store and manage multiple radio stations with JSON/M3U/PLS support
+- **Playlist Management**: Up to 500 radio stations, stored in flash (not RAM), with JSON/M3U/PLS import and export
 - **Volume Control**: Adjustable volume through web interface or rotary encoder
 - **WiFi Configuration**: Web-based WiFi setup with network scanning and multiple network support
-- **File Management**: Upload/download playlists in JSON, M3U, or PLS formats
+- **File Management**: Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats
 - **WebSocket Communication**: Real-time status updates between device and web interface
 - **MPD Protocol Support**: Control via MPD clients (port 6600) with full command list support
 - **Favicon Support**: Automatic favicon detection and display for radio stations
@@ -84,7 +84,7 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 - **WiFi Configuration**: Configure multiple WiFi networks with priority ordering
 
 ### Playlist Management
-- Upload/download playlists in JSON, M3U, or PLS formats
+- Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats
 - Convert between JSON, M3U, and PLS formats on-the-fly
 - Manage individual streams through the web interface
 - Real-time validation of stream URLs and names
@@ -105,8 +105,8 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 | `/wifi.html`              | GET    | WiFi configuration                    |
 | `/about.html`             | GET    | About page                            |
 | `/w`                      | GET/POST | Simple web interface                |
-| `/api/streams`            | GET    | Get all streams in playlist           |
-| `/api/streams`            | POST   | Update playlist                       |
+| `/api/streams`            | GET    | Get the playlist (JSON Lines)         |
+| `/api/streams`            | POST   | Replace the playlist (JSON Lines body)|
 | `/api/player`             | GET/POST | Playback control and player status  |
 | `/api/mixer`              | GET/POST | Volume and bass/mid/treble          |
 | `/api/proxy`              | GET/POST/HEAD | Proxy requests (e.g. favicons) |
@@ -150,6 +150,12 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 ## 📝 Changelog
 
 ### Unreleased
+- Playlist stored in SPIFFS as JSON Lines (`/playlist.jsonl`) and read on demand; limit raised from 20 to 500 stations. An existing `playlist.json` is migrated at first boot
+- `/api/streams` GET and POST use JSON Lines (`{"name":"…","url":"…"}` per line); an empty playlist is a single blank line
+- `/w` page and playlist responses are sent in chunks; RAM use no longer grows with the playlist
+- Configuration import no longer carries the playlist; the web UI uploads it separately
+- Cover art is loaded directly by the browser, with the device proxy as fallback
+- `streamIcyURL` removed from the status JSON
 - Removed ArduinoOTA support
 - `data/wifi.json` is no longer tracked; use `data/wifi.json.example`
 

@@ -66,7 +66,7 @@ src/
   main.h          Config struct, global forward declarations
   mpd.cpp/h       Full MPD 0.23.0 protocol server (~2200 lines)
   player.cpp/h    Audio playback abstraction over ESP32-audioI2S
-  playlist.cpp/h  JSON-backed playlist (max 20 entries)
+  playlist.cpp/h  Playlist kept in SPIFFS as JSON Lines, read on demand (max 500 entries)
   display.cpp/h   OLED driver: font selection, scrolling, timeout
   rotary.cpp/h    ISR-based quadrature rotary encoder + button
   touch.cpp/h     Capacitive touch button handler (up to 3 buttons; compiled out by default, see DISABLE_TOUCH)
@@ -82,7 +82,7 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
   scripts.js      All client-side logic (~3400 lines, shared across pages)
   styles.css      Custom styles extending PicoCSS
   pico.min.css    PicoCSS v2 framework
-  playlist.json   Default radio stations (20 entries)
+  playlist.jsonl  Default radio stations (JSON Lines, one station per line)
   wifi.json       Stored WiFi credentials (up to 5 networks)
   cd.svg / logo.png / favicon.ico
 ```
@@ -165,11 +165,20 @@ playlistIndex, playStartTime, totalPlayTime, dirty
 
 ### `StreamInfoData` (player.h)
 ```
-url[256], name[128], title[128], icyUrl[256], iconUrl[256], bitrate
+url[256], name[128], title[128], iconUrl[256], bitrate
 ```
 
 ### `StreamInfo` / `Playlist` (playlist.h)
-Array of up to 20 `{name[96], url[128]}` entries, serialized as `/playlist.json`.
+Up to 500 `{name[96], url[256]}` entries stored in `/playlist.jsonl`, one JSON
+object per line. Only a 4-byte file offset per entry and one cached entry are
+kept in RAM: `getItem(i)` reads an entry on demand (the returned reference is
+overwritten by the next `getItem()` for another index) and `forEach()` walks
+the file once. A legacy `/playlist.json` is migrated at boot.
+
+**Keep data out of RAM.** Anything that grows with user data (playlist,
+pages, request bodies) is streamed: read from SPIFFS on demand, sent with
+chunked responses (`ChunkedResponse` in main.cpp), received with raw upload
+handlers. Editing and format conversion (M3U, PLS, JSON) happen in the browser.
 
 ---
 
@@ -179,11 +188,12 @@ Array of up to 20 `{name[96], url[128]}` entries, serialized as `/playlist.json`
 |------|---------|----------|
 | `/config.json` | Hardware pin config | 1 KB |
 | `/wifi.json` | WiFi networks (array, max 5) | 2 KB |
-| `/playlist.json` | Radio stations (array, max 20) | 4 KB |
+| `/playlist.jsonl` | Radio stations (JSON Lines, max 500) | ~75 KB at 500 entries |
 | `/player.json` | Playback state | 512 B |
 | `/player.html` etc. | Web UI assets | varies |
 
 Writes use a backup/rollback pattern: existing file copied to `.bak`, new file written, `.bak` removed on success.
+The playlist is written to `/playlist.tmp`, validated line by line, then swapped in (`/playlist.bak` is restored at boot after a power loss).
 
 ---
 
@@ -193,15 +203,14 @@ Writes use a backup/rollback pattern: existing file copied to `.bak`, new file w
 |--------|----------|---------|
 | GET/POST | `/api/player` | Status / play·stop control |
 | GET/POST | `/api/mixer` | Volume (0–22), bass/mid/treble |
-| GET/POST | `/api/streams` | Read / replace playlist |
+| GET/POST | `/api/streams` | Read / replace playlist (JSON Lines, streamed both ways) |
 | GET/POST | `/api/config` | Hardware config |
-| GET | `/api/config/export` | Export all configs |
-| POST | `/api/config/import` | Bulk config import |
+| POST | `/api/config/import` | Bulk import of config/wifi/player (the web UI sends the playlist to `/api/streams`) |
 | GET | `/api/wifi/scan` | Scan WiFi networks |
 | POST | `/api/wifi/save` | Save credentials |
 | GET | `/api/wifi/status` | Connection status |
 | GET | `/api/proxy` | Proxy remote playlist URLs |
-| GET/POST | `/w` | Simple fallback HTML interface |
+| GET/POST | `/w` | Simple fallback HTML interface (sent in chunks) |
 
 Static assets served from SPIFFS via `server.serveStatic()`.
 
