@@ -16,7 +16,7 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 - **Web Interface**: Control playback through a responsive web UI
 - **Physical Controls**: Rotary encoder for volume control and navigation
 - **OLED Display**: Real-time status information with scrolling text
-- **Playlist Management**: Up to 500 radio stations, stored in flash (not RAM), with JSON/M3U/PLS import and export
+- **Playlist Management**: Up to 100 radio stations, stored in flash (not RAM), with JSON/M3U/PLS import and export
 - **Volume Control**: Adjustable volume through web interface or rotary encoder
 - **WiFi Configuration**: Web-based WiFi setup with network scanning and multiple network support
 - **File Management**: Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats
@@ -150,7 +150,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 ## 📝 Changelog
 
 ### Unreleased
-- Playlist stored in SPIFFS as JSON Lines (`/playlist.jsonl`) and read on demand; limit raised from 20 to 500 stations. An existing `playlist.json` is migrated at first boot
+- Playlist stored in SPIFFS as JSON Lines (`/playlist.jsonl`) and read on demand; limit raised from 20 to 100 stations. An existing `playlist.json` is migrated at first boot
 - `/api/streams` GET and POST use JSON Lines (`{"name":"…","url":"…"}` per line); an empty playlist is a single blank line
 - `/w` page and playlist responses are sent in chunks; RAM use no longer grows with the playlist
 - Configuration import no longer carries the playlist; the web UI uploads it separately

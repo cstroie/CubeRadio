@@ -62,7 +62,7 @@
                     ┌────────────────────┐
                     │  Playlist          │  playlist.cpp / playlist.h
                     │                    │
-                    │  offsets[500]      │  file offset per entry
+                    │  offsets[100]      │  file offset per entry
                     │  getItem/forEach   │  ← /playlist.jsonl (SPIFFS)
                     │  upload (stream)   │  validated, swapped in
                     └────────────────────┘
@@ -72,7 +72,7 @@
                     │                    │
                     │  /config.json      │  Config struct ↔ web UI
                     │  /wifi.json        │  SSID/pass, max 5
-                    │  /playlist.jsonl   │  stations, max 500
+                    │  /playlist.jsonl   │  stations, max 100
                     │  /player.json      │  PlayerState persistence
                     │  /player.html …    │  static web assets
                     └────────────────────┘
@@ -121,7 +121,7 @@ and `StreamInfoData`. All control paths (web, MPD, physical) call into `Player`.
 
 ### 3. `Playlist` — Station List
 
-Up to 500 `StreamInfo {name[96], url[256]}` entries kept in `/playlist.jsonl`
+Up to 100 `StreamInfo {name[96], url[256]}` entries kept in `/playlist.jsonl`
 (one JSON object per line), not in RAM.
 
 **Responsibilities:**
@@ -297,7 +297,7 @@ Board-specific compile-time defaults are in `pins_wroom.h`, `pins_wrover.h`, `pi
 | Constant | Value | Location |
 |----------|-------|----------|
 | `MAX_WIFI_NETWORKS` | 5 | `main.h` |
-| `MAX_PLAYLIST_SIZE` | 500 | `main.h` |
+| `MAX_PLAYLIST_SIZE` | 100 | `main.h` |
 | `STREAM_NAME_SIZE` | 96 | `playlist.h` |
 | `STREAM_URL_SIZE` | 256 | `playlist.h` |
 | `PLAYLIST_LINE_MAX` | 1024 B | `playlist.h` |

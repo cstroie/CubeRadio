@@ -13,7 +13,7 @@
  */
 let streams = [];
 // Limits mirrored from the firmware (MAX_PLAYLIST_SIZE, StreamInfo::url[256])
-const MAX_PLAYLIST_SIZE = 500;
+const MAX_PLAYLIST_SIZE = 100;
 const MAX_URL_LENGTH = 255;
 let bass = 0;
 let mid = 0;

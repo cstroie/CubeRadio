@@ -66,7 +66,7 @@ src/
   main.h          Config struct, global forward declarations
   mpd.cpp/h       Full MPD 0.23.0 protocol server (~2200 lines)
   player.cpp/h    Audio playback abstraction over ESP32-audioI2S
-  playlist.cpp/h  Playlist kept in SPIFFS as JSON Lines, read on demand (max 500 entries)
+  playlist.cpp/h  Playlist kept in SPIFFS as JSON Lines, read on demand (max 100 entries)
   display.cpp/h   OLED driver: font selection, scrolling, timeout
   rotary.cpp/h    ISR-based quadrature rotary encoder + button
   touch.cpp/h     Capacitive touch button handler (up to 3 buttons; compiled out by default, see DISABLE_TOUCH)
@@ -169,7 +169,7 @@ url[256], name[128], title[128], iconUrl[256], bitrate
 ```
 
 ### `StreamInfo` / `Playlist` (playlist.h)
-Up to 500 `{name[96], url[256]}` entries stored in `/playlist.jsonl`, one JSON
+Up to 100 `{name[96], url[256]}` entries stored in `/playlist.jsonl`, one JSON
 object per line. Only a 4-byte file offset per entry and one cached entry are
 kept in RAM: `getItem(i)` reads an entry on demand (the returned reference is
 overwritten by the next `getItem()` for another index) and `forEach()` walks
@@ -188,7 +188,7 @@ handlers. Editing and format conversion (M3U, PLS, JSON) happen in the browser.
 |------|---------|----------|
 | `/config.json` | Hardware pin config | 1 KB |
 | `/wifi.json` | WiFi networks (array, max 5) | 2 KB |
-| `/playlist.jsonl` | Radio stations (JSON Lines, max 500) | ~75 KB at 500 entries |
+| `/playlist.jsonl` | Radio stations (JSON Lines, max 100) | ~15 KB at 100 entries |
 | `/player.json` | Playback state | 512 B |
 | `/player.html` etc. | Web UI assets | varies |
 
