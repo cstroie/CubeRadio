@@ -24,7 +24,6 @@
 
 // Buffer size constants
 #define PLAYER_STATE_BUFFER_SIZE 512   // JSON buffer for player state (512 bytes = 2^9)
-#define PLAYLIST_BUFFER_SIZE 4096      // JSON buffer for playlist data (4KB = 2^12)
 
 // Forward declarations
 class Audio;

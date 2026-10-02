@@ -1198,6 +1198,34 @@ function readFileAsText(file) {
   });
 }
 
+/**
+ * @brief Post a request and return its JSON status, throwing on failure
+ * @param {string} url - Endpoint
+ * @param {string} contentType - Request content type
+ * @param {string} body - Request body
+ * @returns {Promise<Object>} Parsed {status, message} response
+ */
+async function postForStatus(url, contentType, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": contentType,
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    body: body,
+  });
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (e) {
+    // Non-JSON response; fall back to the status text below
+  }
+  if (!response.ok || !result || result.status !== "success") {
+    throw new Error((result && result.message) || response.statusText || response.status);
+  }
+  return result;
+}
+
 // Import all configuration
 async function importAllConfiguration() {
   const fileInput = $("import-file");
@@ -1215,54 +1243,32 @@ async function importAllConfiguration() {
   try {
     // Read file content as text
     const fileContent = await readFileAsText(file);
-    const response = await fetch("/api/config/import", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: fileContent,
-    });
-    if (response.ok) {
-      // Try to parse JSON success response
-      try {
-        const result = await response.json();
-        if (result.status === "success") {
-          showModal(
-            "Import successful",
-            result.message ||
-              "Configuration imported successfully. Device restart required for changes to take effect.",
-          );
-        } else {
-          showModal("Error importing configuration", result.message);
-        }
-      } catch (e) {
-        // If JSON parsing fails, use the status text
-        if (response.statusText) {
-          showModal("Error importing configuration", response.statusText);
-        }
-      }
-      // Clear the file input
-      fileInput.value = "";
-    } else {
-      // Try to parse JSON error response
-      let errorMessage = response.status;
-      try {
-        const errorData = await response.json();
-        if (errorData.message) {
-          errorMessage = errorData.message;
-        }
-      } catch (e) {
-        // If JSON parsing fails, use the status text
-        if (response.statusText) {
-          errorMessage = response.statusText;
-        }
-      }
-      showModal("Error importing configuration", errorMessage);
+    const bundle = JSON.parse(fileContent);
+    if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)) {
+      throw new Error("Invalid configuration file: expected a JSON object");
     }
+    // The playlist is uploaded on its own; the device streams it to flash
+    const playlist = bundle["playlist.json"];
+    delete bundle["playlist.json"];
+    let message = "";
+    if (Object.keys(bundle).length > 0) {
+      const result = await postForStatus("/api/config/import", "application/json", JSON.stringify(bundle));
+      message = result.message ||
+        "Configuration imported successfully. Device restart required for changes to take effect.";
+    }
+    if (Array.isArray(playlist)) {
+      const valid = playlist.filter(
+        (s) => s && typeof s === "object" && s.name && String(s.name).trim() && validateStreamURL(s.url),
+      );
+      await postForStatus("/api/streams", "application/x-ndjson", toJSONL(valid));
+      message += (message ? " " : "") + `Playlist imported (${valid.length} streams).`;
+    }
+    showModal("Import successful", message || "Nothing to import");
+    // Clear the file input
+    fileInput.value = "";
   } catch (error) {
     console.error("Error importing configurations:", error);
-    showModal("Error importing configurations", error.message);
+    showModal("Error importing configuration", error.message);
   } finally {
     // Restore button state
     importButton.textContent = originalText;

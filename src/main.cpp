@@ -1672,7 +1672,8 @@ void handleMixer() {
  * @brief Handle import configuration request
  * Imports a combined JSON configuration file and saves individual files to SPIFFS
  * This function receives a JSON file containing all configurations and decomposes
- * it into individual config.json, wifi.json, playlist.json, and player.json files.
+ * it into individual config.json, wifi.json and player.json files. A
+ * "playlist.json" key is ignored; the web UI sends it to /api/streams.
  */
 void handleImportConfig() {
   // Check if request method is POST
@@ -1694,8 +1695,9 @@ void handleImportConfig() {
   }
   // Parse the JSON data
   JsonDocument doc;
-  // Reject oversized bodies (JsonDocument grows unbounded)
-  if (jsonData.length() > 8192) {
+  // Reject oversized bodies (JsonDocument grows unbounded); config.json,
+  // wifi.json and player.json together stay well below 4 KB
+  if (jsonData.length() > 4096) {
     sendJsonResponse("error", "Request body too large", 413);
     return;
   }
@@ -1705,11 +1707,11 @@ void handleImportConfig() {
     sendJsonResponse("error", "Invalid JSON format");
     return;
   }
-  // Buffer sizes matched to each file's maximum expected content
-  const char* configFiles[] = {"config.json", "wifi.json", "playlist.json", "player.json"};
-  const size_t fileSizes[]   = {1024,          2048,        PLAYLIST_BUFFER_SIZE, 512};
+  // The playlist is not part of the bundle: the web UI uploads it separately
+  // through POST /api/streams, which streams it to SPIFFS
+  const char* configFiles[] = {"config.json", "wifi.json", "player.json"};
   bool success = true;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 3; i++) {
     const char* filename = configFiles[i];
     if (!doc[filename].isNull()) {
       String filePath = String("/") + filename;
