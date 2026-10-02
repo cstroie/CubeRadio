@@ -51,12 +51,13 @@
                     └─────────┬──────────┘
                               │
                     ┌─────────▼──────────┐
-                    │  Audio callbacks   │  called in main context
-                    │  (main.cpp)        │
+                    │  Audio callbacks   │  run on core 0 inside
+                    │  (main.cpp)        │  audio->loop(); main loop
+                    │                    │  does display/WebSocket
                     │  showstreamtitle   │→ player.setStreamTitle()
                     │  showstation       │→ player.setStreamName()
                     │  bitrate           │→ player.setBitrate()
-                    │  icyurl / info     │→ ICY / cover art
+                    │  info              │→ cover art URL
                     └────────────────────┘
 
                     ┌────────────────────┐
@@ -74,7 +75,7 @@
                     │  /wifi.json        │  SSID/pass, max 5
                     │  /playlist.jsonl   │  stations, max 100
                     │  /player.json      │  PlayerState persistence
-                    │  /player.html …    │  static web assets
+                    │  /*.html.gz …      │  gzipped web assets
                     └────────────────────┘
 ```
 
@@ -93,7 +94,8 @@ everything together in `setup()`, and drives the cooperative main loop.
 - Implement all HTTP API handlers (`handleGetStreams`, `handlePostConfig`, …)
 - Implement audio callbacks (`audio_showstreamtitle`, `audio_bitrate`, …)
 - Run the main loop: poll servers, poll controls, update display, watch audio
-- Broadcast status JSON over WebSocket (`sendStatusToClients`, `generateStatusJSON`)
+- Broadcast status JSON over WebSocket (`sendStatusToClients`, `generateStatusJSON` with the heap-free `JsonObjectWriter`)
+- Stream large responses with `ChunkedResponse`; spool request bodies to SPIFFS (`spoolRequestBody` / `parseSpooledBody`)
 - SPIFFS JSON helpers: `readJsonFile` / `writeJsonFile` (backup + rollback)
 
 **Key globals:** `server`, `webSocket`, `mpdServer`, `player`, `mpdInterface`,
@@ -201,26 +203,29 @@ Up to three capacitive touch buttons (play, next, prev), all optional (pin = -1 
 
 | Endpoint | Handler | Side-effects |
 |----------|---------|--------------|
-| `GET /api/player` | `generateStatusJSON` | none |
+| `GET /api/player` | playing state, stream info, elapsed time | none |
 | `POST /api/player` | parse action/url/index → `player.startStream()` / `stopStream()` | saves state, notifies clients |
 | `GET/POST /api/mixer` | read/write volume + tone | saves state |
 | `GET/POST /api/streams` | stream playlist as JSON Lines / raw upload into SPIFFS | replaces playlist |
 | `GET/POST /api/config` | read/write `Config` struct | saves config, reinit hardware |
-| `POST /api/config/import` | unbundle + write config/wifi/player | rewrites configs |
+| `POST /api/config/import` | body spooled to `/body.tmp`, unbundle + write config/wifi/player | rewrites configs |
 | `GET /api/wifi/scan` | `WiFi.scanNetworks()` | blocking scan |
-| `POST /api/wifi/save` | write `wifi.json` | reconnects |
+| `POST /api/wifi/save` | body spooled to `/body.tmp`, write `wifi.json` | reconnects |
+| `GET /api/wifi/config` | configured SSIDs (no passwords) | none |
 | `GET /api/wifi/status` | current connection info | none |
 | `GET /api/proxy` | `HTTPClient` fetch, plain HTTP only | proxy for CORS |
 | `GET/POST /w` | `handleSimpleWebPage()` | fallback control UI, sent in chunks |
 
-Static assets served from SPIFFS via `server.serveStatic()`.
+Static assets are served from SPIFFS via `server.serveStatic()`. They are stored gzipped
+(`tools/gzip_data.py` builds the image) and sent with `Content-Encoding: gzip`;
+`scripts.js`/`styles.css` are cached for an hour, PicoCSS and the logo for 30 days.
 
 **WebSocket (port 81):**
 - `webSocketEvent()` handles connect/disconnect/text
 - On connect: send full status JSON immediately
 - Every 3 s while playing: send partial status (bitrate)
 - On any state change: `sendStatusToClients()` broadcasts full JSON to all clients
-- Change detection: `previousStatus` string diff prevents redundant sends
+- Change detection: a 32-bit FNV-1a hash of the last full and partial message prevents redundant sends
 
 ---
 
@@ -228,9 +233,9 @@ Static assets served from SPIFFS via `server.serveStatic()`.
 
 **STA mode:** connects to up to 5 stored networks in priority order (first network found in scan wins). Reconnect attempt every 60 s in main loop.
 
-**AP mode:** always started (`CubeRadio` SSID, no password); provides fallback control access when no STA network is available.
+**AP mode:** open `CubeRadio` access point, started only while no STA network is connected and shut down once STA connects.
 
-**mDNS:** `CubeRadio.local`, advertises HTTP (port 80) and MPD (port 6600). Only on boards with PSRAM (`BOARD_HAS_PSRAM`).
+**mDNS:** `CubeRadio.local`, advertises HTTP (port 80) and MPD (port 6600), on all boards.
 
 
 ---
@@ -240,7 +245,7 @@ Static assets served from SPIFFS via `server.serveStatic()`.
 All configuration is stored as JSON files on SPIFFS.
 
 **Read/write helpers** (`readJsonFile` / `writeJsonFile` in main.cpp):
-- `readJsonFile`: opens file, bounds-checks size, deserialises with ArduinoJson
+- `readJsonFile`: opens file, bounds-checks size, deserialises straight from the file (no intermediate buffer)
 - `writeJsonFile`: copies existing file to `.bak`, serialises and writes new file, removes `.bak` on success; rolls back on failure
 
 | File | Owner | Saved by |
@@ -249,6 +254,7 @@ All configuration is stored as JSON files on SPIFFS.
 | `/wifi.json` | `ssid[]`/`password[]` arrays | `saveWiFiCredentials()` |
 | `/playlist.jsonl` | `Playlist` | `Playlist::endUpload()` |
 | `/player.json` | `PlayerState` | `Player::savePlayerState()` |
+| `/body.tmp` | spooled request body | `spoolRequestBody()` (deleted after parsing) |
 
 **Dirty-flag batching:** `PlayerState.dirty` is set on any state change; `savePlayerState()` is called explicitly after user actions (not on every loop tick) to avoid excessive SPIFFS writes.
 
@@ -306,6 +312,7 @@ Board-specific compile-time defaults are in `pins_wroom.h`, `pins_wrover.h`, `pi
 | `StreamInfoData::title` | 128 | `player.h` |
 | `MAX_COMMAND_LIST_SIZE` | 20 (cap 50) | `mpd.h` |
 | `PLAYER_STATE_BUFFER_SIZE` | 512 B | `player.h` |
+| `STATUS_JSON_SIZE` | 1536 B | `main.h` |
 | Main loop delay | 150 ms | `main.cpp` |
 | Display update interval | 500 ms | `main.cpp` |
 | WebSocket status interval | 3 s | `main.cpp` |

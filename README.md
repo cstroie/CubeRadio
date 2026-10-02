@@ -8,11 +8,11 @@ An ESP32-based internet radio player with web interface control
 
 ## Overview
 
-CubeRadio is an open-source internet radio player built on the ESP32 platform. It allows you to stream MP3 audio from HTTP URLs and control playback through a web interface or physical rotary encoder. The project features an OLED display for local status feedback and supports playlist management through a web API.
+CubeRadio is an open-source internet radio player built on the ESP32 platform. It streams MP3/AAC/FLAC internet radio over HTTP or HTTPS and is controlled from a web interface, any MPD client or a physical rotary encoder. The project features an OLED display for local status feedback and supports playlist management through a web API.
 
 ## 🌟 Key Features
 
-- **Internet Radio Streaming**: Play MP3 streams from HTTP URLs
+- **Internet Radio Streaming**: Play MP3, AAC and FLAC streams from HTTP/HTTPS URLs
 - **Web Interface**: Control playback through a responsive web UI
 - **Physical Controls**: Rotary encoder for volume control and navigation
 - **OLED Display**: Real-time status information with scrolling text
@@ -22,8 +22,8 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 - **File Management**: Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats
 - **WebSocket Communication**: Real-time status updates between device and web interface
 - **MPD Protocol Support**: Control via MPD clients (port 6600) with full command list support
-- **Favicon Support**: Automatic favicon detection and display for radio stations
-- **ICY Metadata**: Full ICY metadata support including stream URLs and descriptions
+- **Cover Art**: Station artwork from stream metadata and artist images, loaded by the browser
+- **ICY Metadata**: Station name and stream title from ICY headers and metadata
 - **Artist/Track Parsing**: Automatic parsing of artist and track information from stream titles
 - **Enhanced Status Information**: Detailed playback information including bitrates and elapsed time
 
@@ -31,7 +31,7 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 
 - ESP32 development board
 - I2S DAC (e.g., MAX98357A) or amplifier
-- SSD1306 128x64 OLED display
+- SSD1306 OLED display (128x64 or 128x32)
 - Rotary encoder with push button
 - Audio amplifier and speaker
 
@@ -47,8 +47,10 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 | Rotary CLK        | GPIO 18   |
 | Rotary DT         | GPIO 19   |
 | Rotary SW         | GPIO 23   |
+| Board button      | GPIO 0    |
+| LED               | GPIO 2    |
 
-> **Note**: Default pins come from `src/pins_wroom.h`, `pins_wrover.h` or `pins_cam.h` (selected by the PlatformIO environment) and can be overridden through the web configuration page.
+> **Note**: These are the WROOM defaults. Default pins come from `src/pins_wroom.h`, `pins_wrover.h` or `pins_cam.h` (selected by the PlatformIO environment) and can be overridden through the web configuration page.
 
 ## 🚀 Getting Started
 
@@ -68,8 +70,9 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
    pio run -t upload
    pio run -t uploadfs
    ```
+   `uploadfs` stores the web assets gzipped (see `tools/gzip_data.py`); edit the uncompressed files in `data/`.
 
-2. After the device boots, connect to its WiFi access point (default: "CubeRadio-Setup") or access the device's IP address on your network
+2. If no configured network is reachable, the device starts an open access point named `CubeRadio`; connect to it and open the IP shown on the display. Once on your network it is reachable at `http://cuberadio.local/`
 
 3. Configure your WiFi networks through the web interface. To preconfigure, copy `data/wifi.json.example` to `data/wifi.json` (git-ignored) before `uploadfs`.
 
@@ -84,8 +87,9 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 - **WiFi Configuration**: Configure multiple WiFi networks with priority ordering
 
 ### Playlist Management
-- Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats
-- Convert between JSON, M3U, and PLS formats on-the-fly
+- Up to 100 stations, stored on the device as JSON Lines and read on demand
+- Upload/download playlists in JSON, JSON Lines, M3U, or PLS formats (conversion happens in the browser)
+- Import stations from a remote playlist URL
 - Manage individual streams through the web interface
 - Real-time validation of stream URLs and names
 
@@ -100,47 +104,56 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 | Endpoint                  | Method | Description                           |
 |---------------------------|--------|---------------------------------------|
 | `/`                       | GET    | Main control interface                |
-| `/playlist.html`          | GET    | Playlist management                   |
-| `/config.html`            | GET    | Hardware configuration                |
-| `/wifi.html`              | GET    | WiFi configuration                    |
-| `/about.html`             | GET    | About page                            |
-| `/w`                      | GET/POST | Simple web interface                |
+| `/playlist`               | GET    | Playlist management                   |
+| `/config`                 | GET    | Hardware configuration                |
+| `/wifi`                   | GET    | WiFi configuration                    |
+| `/about`                  | GET    | About page                            |
+| `/w`                      | GET/POST | Simple web interface (no JavaScript) |
 | `/api/streams`            | GET    | Get the playlist (JSON Lines)         |
 | `/api/streams`            | POST   | Replace the playlist (JSON Lines body)|
 | `/api/player`             | GET/POST | Playback control and player status  |
 | `/api/mixer`              | GET/POST | Volume and bass/mid/treble          |
 | `/api/proxy`              | GET    | Proxy plain HTTP requests (remote playlists, cover art) |
-| `/api/status`             | GET    | Get current player status             |
 | `/api/config`             | GET    | Get current configuration             |
 | `/api/config`             | POST   | Update configuration                  |
-| `/api/config/import`      | POST   | Import configuration files            |
+| `/api/config/import`      | POST   | Import config, WiFi and player settings |
 | `/api/wifi/scan`          | GET    | Scan for WiFi networks                |
 | `/api/wifi/save`          | POST   | Save WiFi configuration               |
 | `/api/wifi/status`        | GET    | Get current WiFi status               |
 | `/api/wifi/config`        | GET    | Get current WiFi configuration        |
 
-> **Note**: WebSocket server runs on port 81 for real-time status updates
+> **Note**: The WebSocket server on port 81 pushes status updates; the MPD server listens on port 6600.
 
 ## 📁 Project Structure
 
 ```
-├── data/              # Web interface files
-│   ├── player.html    # Main control interface
-│   ├── playlist.html  # Playlist management
-│   ├── wifi.html      # WiFi configuration
-│   ├── config.html    # Hardware configuration
-│   ├── about.html     # About page
-│   ├── styles.css     # Shared styles
-│   └── scripts.js     # Shared JavaScript
+├── data/                 # SPIFFS content (pio run -t uploadfs)
+│   ├── player.html       # Main control interface
+│   ├── playlist.html     # Playlist management
+│   ├── wifi.html         # WiFi configuration
+│   ├── config.html       # Hardware configuration
+│   ├── about.html        # About page
+│   ├── scripts.js        # Shared JavaScript
+│   ├── styles.css        # Shared styles
+│   ├── pico.min.css      # PicoCSS framework
+│   ├── cd.svg            # Logo and favicon
+│   ├── playlist.jsonl    # Default stations (JSON Lines)
+│   └── wifi.json.example # WiFi credentials template
 ├── src/
-│   ├── main.cpp       # Main firmware code
-│   ├── main.h         # Main header file
-│   ├── mpd.cpp        # MPD protocol implementation
-│   ├── mpd.h          # MPD protocol header
-│   ├── rotary.cpp     # Rotary encoder handling
-│   └── rotary.h       # Rotary encoder header
-├── platformio.ini     # PlatformIO configuration
-└── README.md          # This file
+│   ├── main.cpp/h        # Setup, main loop, HTTP/WebSocket handlers
+│   ├── player.cpp/h      # Playback state and audio control
+│   ├── playlist.cpp/h    # Playlist stored in SPIFFS
+│   ├── mpd.cpp/h         # MPD protocol server
+│   ├── display.cpp/h     # OLED display
+│   ├── rotary.cpp/h      # Rotary encoder
+│   ├── touch.cpp/h       # Touch buttons (compiled out by default)
+│   ├── pins*.h           # Per-board default pins
+│   └── Spleen*.h         # Bitmap fonts
+├── tools/
+│   └── gzip_data.py      # Gzips web assets for the SPIFFS image
+├── platformio.ini        # PlatformIO configuration
+├── ARCHITECTURE.md       # Design overview
+└── CLAUDE.md             # Developer notes
 ```
 
 ## 📜 License
@@ -177,7 +190,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 🙏 Acknowledgments
 
-- ESP32 Audio library by Earle F. Philhower
+- ESP32-audioI2S library by schreibfaul1 (esphome fork)
 - ArduinoJson library by Benoit Blanchon
 - SSD1306 library by Adafruit
 - WebSocket library by Links2004

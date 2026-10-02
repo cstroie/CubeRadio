@@ -68,9 +68,9 @@ To enable touch buttons:
 
 ```
 src/
-  main.cpp        Setup, HTTP/WebSocket handlers, main loop, audio callbacks (~2700 lines)
+  main.cpp        Setup, HTTP/WebSocket handlers, main loop, audio callbacks (~2500 lines)
   main.h          Config struct, global forward declarations
-  mpd.cpp/h       Full MPD 0.23.0 protocol server (~2200 lines)
+  mpd.cpp/h       Full MPD 0.23.0 protocol server (~2300 lines)
   player.cpp/h    Audio playback abstraction over ESP32-audioI2S
   playlist.cpp/h  Playlist kept in SPIFFS as JSON Lines, read on demand (max 100 entries)
   display.cpp/h   OLED driver: font selection, scrolling, timeout
@@ -89,7 +89,7 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
   styles.css      Custom styles extending PicoCSS
   pico.min.css    PicoCSS v2 framework
   playlist.jsonl  Default radio stations (JSON Lines, one station per line)
-  wifi.json       Stored WiFi credentials (up to 5 networks)
+  wifi.json       Stored WiFi credentials (up to 5 networks; git-ignored, see wifi.json.example)
   cd.svg          Logo and favicon
 ```
 
@@ -149,11 +149,12 @@ Physical controls:
    - `audio_showstreamtitle()` → `playerState.streamTitle`
    - `audio_showstation()` → `playerState.streamName`
    - `audio_bitrate()` → `playerState.bitrate` (bps → kbps)
-   - `audio_icyurl()` / `audio_info()` → ICY metadata, cover art URL
+   - `audio_info()` → cover art URL (`audio_icyurl()` only logs the station homepage)
 
 ### Status updates
 - Every 3 s: main loop broadcasts JSON status to all WebSocket clients
 - On any state change: `sendStatusToClients()` is called immediately
+- The status is written into a stack buffer by `JsonObjectWriter` (no heap); a hash of the last message suppresses duplicates
 - MPD idle mode: hash-based change detection (title hash, status hash) sends `changed: player/playlist/mixer`
 
 ---
@@ -184,7 +185,8 @@ the file once. A legacy `/playlist.json` is migrated at boot.
 **Keep data out of RAM.** Anything that grows with user data (playlist,
 pages, request bodies) is streamed: read from SPIFFS on demand, sent with
 chunked responses (`ChunkedResponse` in main.cpp), received with raw upload
-handlers. Editing and format conversion (M3U, PLS, JSON) happen in the browser.
+handlers or spooled to SPIFFS (`spoolRequestBody()`). Editing and format
+conversion (M3U, PLS, JSON) happen in the browser.
 
 ---
 
@@ -196,7 +198,8 @@ handlers. Editing and format conversion (M3U, PLS, JSON) happen in the browser.
 | `/wifi.json` | WiFi networks (array, max 5) | 2 KB |
 | `/playlist.jsonl` | Radio stations (JSON Lines, max 100) | ~15 KB at 100 entries |
 | `/player.json` | Playback state | 512 B |
-| `/player.html` etc. | Web UI assets | varies |
+| `/body.tmp` | Spooled request body (wifi save, config import) | 4 KB, deleted after parsing |
+| `/*.html.gz` etc. | Gzipped web UI assets | ~47 KB total |
 
 Writes use a backup/rollback pattern: existing file copied to `.bak`, new file written, `.bak` removed on success.
 The playlist is written to `/playlist.tmp`, validated line by line, then swapped in (`/playlist.bak` is restored at boot after a power loss).
@@ -214,6 +217,7 @@ The playlist is written to `/playlist.tmp`, validated line by line, then swapped
 | POST | `/api/config/import` | Bulk import of config/wifi/player (the web UI sends the playlist to `/api/streams`) |
 | GET | `/api/wifi/scan` | Scan WiFi networks |
 | POST | `/api/wifi/save` | Save credentials |
+| GET | `/api/wifi/config` | Configured SSIDs |
 | GET | `/api/wifi/status` | Connection status |
 | GET | `/api/proxy` | Proxy remote playlists / cover art (plain HTTP only; HTTPS is refused to save heap) |
 | GET/POST | `/w` | Simple fallback HTML interface (sent in chunks) |
@@ -293,6 +297,6 @@ All pins are overridable through the web config UI and persisted to `/config.jso
 
 ## Error Recovery
 
-- **WiFi lost**: reconnect attempt every 60 s; soft-AP always available as fallback
+- **WiFi lost**: reconnect attempt every 60 s; the open `CubeRadio` soft-AP runs only while STA is disconnected
 - **Stream stops unexpectedly**: main loop detects `isPlaying && !isRunning`, waits 1 s, calls `startStream()` again
 - **SPIFFS mount fails**: `SPIFFS.format()` then retry; falls back to compiled-in defaults
