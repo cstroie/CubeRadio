@@ -209,7 +209,7 @@ void Player::clearPlayerState() {
  * @brief Load player state from SPIFFS
  */
 void Player::loadPlayerState() {
-  DynamicJsonDocument doc(PLAYER_STATE_BUFFER_SIZE);  // Use predefined buffer size
+  JsonDocument doc;
   if (readJsonFile("/player.json", PLAYER_STATE_BUFFER_SIZE, doc)) {
     playerState.playing = doc["playing"] | false;
     // Constrain like the setters do — a corrupted or hand-edited file must
@@ -248,7 +248,7 @@ void Player::loadPlayerState() {
  * @brief Save player state to SPIFFS
  */
 void Player::savePlayerState() {
-  DynamicJsonDocument doc(PLAYER_STATE_BUFFER_SIZE);  // Use predefined buffer size
+  JsonDocument doc;
   doc["playing"] = playerState.playing;
   doc["volume"] = playerState.volume;
   doc["bass"] = playerState.bass;

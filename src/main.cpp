@@ -260,7 +260,7 @@ void audio_error_on_connect(const char *info) {
  * @param doc JsonDocument to populate with parsed data
  * @return true if successful, false otherwise
  */
-bool readJsonFile(const char* filename, size_t maxFileSize, DynamicJsonDocument& doc) {
+bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc) {
   // Check if the file exists
   if (!SPIFFS.exists(filename)) {
     Serial.printf("JSON file not found: %s\n", filename);
@@ -318,7 +318,7 @@ bool readJsonFile(const char* filename, size_t maxFileSize, DynamicJsonDocument&
  * @param doc JsonDocument to serialize
  * @return true if successful, false otherwise
  */
-bool writeJsonFile(const char* filename, DynamicJsonDocument& doc) {
+bool writeJsonFile(const char* filename, JsonDocument& doc) {
   // Create backup of existing file
   String backupFilename = String(filename) + ".bak";
   if (SPIFFS.exists(filename)) {
@@ -386,7 +386,7 @@ void sendJsonResponse(const String& status, const String& message, int code = -1
     code = (status == "success") ? 200 : 400;
   }
   // Create JSON response
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["status"] = status;
   doc["message"] = message;
   String json;
@@ -404,7 +404,7 @@ void handleWiFiConfig() {
   // Yield to other tasks before processing
   yield();
   // Create JSON document with appropriate size
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   // Create JSON array
   JsonArray array = doc.to<JsonArray>();
   // Populate JSON array with configured network SSIDs
@@ -432,21 +432,21 @@ void handleWiFiScan() {
   // Yield to other tasks before processing
   yield();
   // Create JSON document with appropriate size
-  DynamicJsonDocument doc(2048);
+  JsonDocument doc;
   // Scan for available networks
   int n = WiFi.scanNetworks();
   yield();
   // Add available networks
-  JsonArray networks = doc.createNestedArray("networks");
+  JsonArray networks = doc["networks"].to<JsonArray>();
   for (int i = 0; i < n; ++i) {
-    JsonObject network = networks.createNestedObject();
+    JsonObject network = networks.add<JsonObject>();
     network["ssid"] = WiFi.SSID(i);
     network["rssi"] = WiFi.RSSI(i);
     // Yield to other tasks during long operations
     yield();
   }
   // Add configured networks
-  JsonArray configured = doc.createNestedArray("configured");
+  JsonArray configured = doc["configured"].to<JsonArray>();
   for (int i = 0; i < wifiNetworkCount; i++) {
     configured.add(String(ssid[i]));
     // Yield to other tasks during long operations
@@ -474,7 +474,12 @@ void handleWiFiSave() {
   }
   // Parse JSON data
   String json = server.arg("plain");
-  DynamicJsonDocument doc(2048);  // Increased size for array format
+  JsonDocument doc;
+  // Reject oversized bodies (JsonDocument grows unbounded)
+  if (json.length() > 2048) {
+    sendJsonResponse("error", "Request body too large", 413);
+    return;
+  }
   DeserializationError error = deserializeJson(doc, json);
   // Check for errors
   if (error) {
@@ -494,18 +499,18 @@ void handleWiFiSave() {
   int existingNetworkCount = 0;
   
   // Parse existing JSON file
-  DynamicJsonDocument existingDoc(2048);
+  JsonDocument existingDoc;
   if (readJsonFile("/wifi.json", 2048, existingDoc) && existingDoc.is<JsonArray>()) {
     JsonArray existingNetworks = existingDoc.as<JsonArray>();
     for (JsonObject existingNetwork : existingNetworks) {
       if (existingNetworkCount >= MAX_WIFI_NETWORKS) break;
-      if (existingNetwork.containsKey("ssid")) {
+      if (!existingNetwork["ssid"].isNull()) {
         const char* ssidValue = existingNetwork["ssid"];
         if (ssidValue) {
           strncpy(existingSsid[existingNetworkCount], ssidValue, sizeof(existingSsid[existingNetworkCount]) - 1);
           existingSsid[existingNetworkCount][sizeof(existingSsid[existingNetworkCount]) - 1] = '\0';
         }
-        if (existingNetwork.containsKey("password")) {
+        if (!existingNetwork["password"].isNull()) {
           const char* pwdValue = existingNetwork["password"];
           if (pwdValue) {
             strncpy(existingPassword[existingNetworkCount], pwdValue, sizeof(existingPassword[existingNetworkCount]) - 1);
@@ -532,7 +537,7 @@ void handleWiFiSave() {
     for (JsonObject network : networks) {
       if (newNetworkCount >= MAX_WIFI_NETWORKS) break;
       // Handle required SSID
-      if (network.containsKey("ssid")) {
+      if (!network["ssid"].isNull()) {
         const char* ssidValue = network["ssid"];
         if (ssidValue && strlen(ssidValue) > 0 && strlen(ssidValue) < sizeof(newSsid[newNetworkCount])) {
           strncpy(newSsid[newNetworkCount], ssidValue, sizeof(newSsid[newNetworkCount]) - 1);
@@ -542,7 +547,7 @@ void handleWiFiSave() {
           return;
         }
         // Handle optional password
-        if (network.containsKey("password")) {
+        if (!network["password"].isNull()) {
           // Use provided password
           const char* pwdValue = network["password"];
           if (pwdValue && strlen(pwdValue) < sizeof(newPassword[newNetworkCount])) {
@@ -589,7 +594,7 @@ void handleWiFiStatus() {
   // Yield to other tasks before processing
   yield();
   // Create JSON document with appropriate size
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   // Add connection status
   if (WiFi.status() == WL_CONNECTED) {
     doc["connected"] = true;
@@ -615,7 +620,7 @@ void handleWiFiStatus() {
  */
 void loadWiFiCredentials() {
   // Parse the JSON document
-  DynamicJsonDocument doc(2048);  // Increased size for array format
+  JsonDocument doc;
   if (!readJsonFile("/wifi.json", 2048, doc)) {
     return;
   }
@@ -628,7 +633,7 @@ void loadWiFiCredentials() {
     for (JsonObject network : networks) {
       if (wifiNetworkCount >= MAX_WIFI_NETWORKS) break;
       // Check if SSID exists
-      if (network.containsKey("ssid")) {
+      if (!network["ssid"].isNull()) {
         const char* ssidValue = network["ssid"];
         if (ssidValue) {
           strncpy(ssid[wifiNetworkCount], ssidValue, sizeof(ssid[wifiNetworkCount]) - 1);
@@ -637,7 +642,7 @@ void loadWiFiCredentials() {
           ssid[wifiNetworkCount][0] = '\0';
         }
         // Check if password exists
-        if (network.containsKey("password")) {
+        if (!network["password"].isNull()) {
           const char* pwdValue = network["password"];
           if (pwdValue) {
             strncpy(password[wifiNetworkCount], pwdValue, sizeof(password[wifiNetworkCount]) - 1);
@@ -666,11 +671,11 @@ void loadWiFiCredentials() {
  * It stores networks in the new JSON array format.
  */
 void saveWiFiCredentials() {
-  DynamicJsonDocument doc(2048); // Increased size for array format
+  JsonDocument doc;
   JsonArray networks = doc.to<JsonArray>();
   // Save networks in the JSON array format [{"ssid": "name", "password": "pass"}, ...]
   for (int i = 0; i < wifiNetworkCount; i++) {
-    JsonObject network = networks.createNestedObject();
+    JsonObject network = networks.add<JsonObject>();
     network["ssid"] = ssid[i];
     if (strlen(password[i]) > 0) {
       network["password"] = password[i];
@@ -690,25 +695,25 @@ void saveWiFiCredentials() {
  * Helper function to extract configuration values from a JSON document
  * @param doc Reference to the JSON document to extract from
  */
-void extractConfigFromJson(DynamicJsonDocument& doc) {
-  if (doc.containsKey("i2s_dout")) config.i2s_dout = doc["i2s_dout"];
-  if (doc.containsKey("i2s_bclk")) config.i2s_bclk = doc["i2s_bclk"];
-  if (doc.containsKey("i2s_lrc")) config.i2s_lrc = doc["i2s_lrc"];
-  if (doc.containsKey("led_pin")) config.led_pin = doc["led_pin"];
-  if (doc.containsKey("rotary_clk")) config.rotary_clk = doc["rotary_clk"];
-  if (doc.containsKey("rotary_dt")) config.rotary_dt = doc["rotary_dt"];
-  if (doc.containsKey("rotary_sw")) config.rotary_sw = doc["rotary_sw"];
-  if (doc.containsKey("board_button")) config.board_button = doc["board_button"];
-  if (doc.containsKey("display_sda")) config.display_sda = doc["display_sda"];
-  if (doc.containsKey("display_scl")) config.display_scl = doc["display_scl"];
-  if (doc.containsKey("display_type")) config.display_type = doc["display_type"];
-  if (doc.containsKey("display_address")) config.display_address = doc["display_address"];
-  if (doc.containsKey("display_timeout")) config.display_timeout = doc["display_timeout"];
-  if (doc.containsKey("touch_play")) config.touch_play = doc["touch_play"];
-  if (doc.containsKey("touch_next")) config.touch_next = doc["touch_next"];
-  if (doc.containsKey("touch_prev")) config.touch_prev = doc["touch_prev"];
-  if (doc.containsKey("touch_threshold")) config.touch_threshold = doc["touch_threshold"];
-  if (doc.containsKey("touch_debounce")) config.touch_debounce = doc["touch_debounce"];
+void extractConfigFromJson(JsonDocument& doc) {
+  if (!doc["i2s_dout"].isNull()) config.i2s_dout = doc["i2s_dout"];
+  if (!doc["i2s_bclk"].isNull()) config.i2s_bclk = doc["i2s_bclk"];
+  if (!doc["i2s_lrc"].isNull()) config.i2s_lrc = doc["i2s_lrc"];
+  if (!doc["led_pin"].isNull()) config.led_pin = doc["led_pin"];
+  if (!doc["rotary_clk"].isNull()) config.rotary_clk = doc["rotary_clk"];
+  if (!doc["rotary_dt"].isNull()) config.rotary_dt = doc["rotary_dt"];
+  if (!doc["rotary_sw"].isNull()) config.rotary_sw = doc["rotary_sw"];
+  if (!doc["board_button"].isNull()) config.board_button = doc["board_button"];
+  if (!doc["display_sda"].isNull()) config.display_sda = doc["display_sda"];
+  if (!doc["display_scl"].isNull()) config.display_scl = doc["display_scl"];
+  if (!doc["display_type"].isNull()) config.display_type = doc["display_type"];
+  if (!doc["display_address"].isNull()) config.display_address = doc["display_address"];
+  if (!doc["display_timeout"].isNull()) config.display_timeout = doc["display_timeout"];
+  if (!doc["touch_play"].isNull()) config.touch_play = doc["touch_play"];
+  if (!doc["touch_next"].isNull()) config.touch_next = doc["touch_next"];
+  if (!doc["touch_prev"].isNull()) config.touch_prev = doc["touch_prev"];
+  if (!doc["touch_threshold"].isNull()) config.touch_threshold = doc["touch_threshold"];
+  if (!doc["touch_debounce"].isNull()) config.touch_debounce = doc["touch_debounce"];
 }
 
 /**
@@ -716,7 +721,7 @@ void extractConfigFromJson(DynamicJsonDocument& doc) {
  * Helper function to fill a JSON document with configuration values
  * @param doc Reference to the JSON document to populate
  */
-void populateConfigJson(DynamicJsonDocument& doc) {
+void populateConfigJson(JsonDocument& doc) {
   doc["i2s_dout"] = config.i2s_dout;
   doc["i2s_bclk"] = config.i2s_bclk;
   doc["i2s_lrc"] = config.i2s_lrc;
@@ -743,7 +748,7 @@ void populateConfigJson(DynamicJsonDocument& doc) {
  */
 void loadConfig() {
   // Parse the JSON document
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   // Initialize config with default values
   config.i2s_dout = DEFAULT_I2S_DOUT;
   config.i2s_bclk = DEFAULT_I2S_BCLK;
@@ -781,7 +786,7 @@ void loadConfig() {
  */
 void saveConfig() {
   // Create a JSON document
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   populateConfigJson(doc);
   // Save the JSON document to SPIFFS using helper function
   if (writeJsonFile("/config.json", doc)) {
@@ -800,11 +805,11 @@ void handleGetConfig() {
   // Yield to other tasks before processing
   yield();
   // Create JSON document with appropriate size
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   // Populate JSON document with configuration values
   populateConfigJson(doc);
   // Add display types information
-  JsonArray displays = doc.createNestedArray("displays");
+  JsonArray displays = doc["displays"].to<JsonArray>();
   for (int i = 0; i < getDisplayTypeCount(); i++) {
     const char* displayName = getDisplayTypeName(i);
     if (displayName) {
@@ -833,7 +838,12 @@ void handlePostConfig() {
   }
   // Parse the JSON data
   String jsonData = server.arg("plain");
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
+  // Reject oversized bodies (JsonDocument grows unbounded)
+  if (jsonData.length() > 1024) {
+    sendJsonResponse("error", "Request body too large", 413);
+    return;
+  }
   DeserializationError error = deserializeJson(doc, jsonData);
   // Check for JSON parsing errors
   if (error) {
@@ -1272,11 +1282,11 @@ void handleGetStreams() {
   yield();
   // Serialize from the authoritative in-memory playlist so the response always
   // matches what the device is actually using, even if the last SPIFFS save failed.
-  DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
+  JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
   for (int i = 0; i < player.getPlaylistCount(); i++) {
     const StreamInfo& si = player.getPlaylistItem(i);
-    JsonObject item = array.createNestedObject();
+    JsonObject item = array.add<JsonObject>();
     item["name"] = si.name;
     item["url"]  = si.url;
   }
@@ -1302,7 +1312,12 @@ void handlePostStreams() {
     return;
   }
   // Parse the JSON data
-  DynamicJsonDocument doc(4096);
+  JsonDocument doc;
+  // Reject oversized bodies (JsonDocument grows unbounded)
+  if (jsonData.length() > 4096) {
+    sendJsonResponse("error", "Request body too large", 413);
+    return;
+  }
   DeserializationError error = deserializeJson(doc, jsonData);
   // Check for JSON parsing errors
   if (error) {
@@ -1324,7 +1339,7 @@ void handlePostStreams() {
   // Validate the entire incoming array BEFORE touching the in-memory playlist.
   // Clearing first and then aborting on a bad entry would leave the playlist destroyed.
   for (JsonObject item : array) {
-    if (!item.containsKey("name") || !item.containsKey("url")) {
+    if (item["name"].isNull() || item["url"].isNull()) {
       sendJsonResponse("error", "Each item must have 'name' and 'url' fields");
       return;
     }
@@ -1388,12 +1403,12 @@ void handlePlayer() {
   // Handle GET request - return player status
   if (server.method() == HTTP_GET) {
     // Create JSON document with appropriate size
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     // Add player status
     doc["status"] = player.isPlaying() ? "play" : "stop";
     // If playing, add stream information
     if (player.isPlaying()) {
-      JsonObject streamObj = doc.createNestedObject("stream");
+      JsonObject streamObj = doc["stream"].to<JsonObject>();
       streamObj["name"] = player.getStreamName();
       streamObj["title"] = player.getStreamTitle();
       streamObj["url"] = player.getStreamUrl();
@@ -1422,7 +1437,12 @@ void handlePlayer() {
   if (server.hasArg("plain")) {
     // Handle JSON payload
     String json = server.arg("plain");
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
+    // Reject oversized bodies (JsonDocument grows unbounded)
+    if (json.length() > 512) {
+      sendJsonResponse("error", "Request body too large", 413);
+      return;
+    }
     DeserializationError error = deserializeJson(doc, json);
     // Check for JSON parsing errors
     if (error) {
@@ -1430,16 +1450,16 @@ void handlePlayer() {
       return;
     }
     // Extract parameters from JSON
-    if (doc.containsKey("action")) {
+    if (!doc["action"].isNull()) {
       action = doc["action"].as<String>();
     }
-    if (doc.containsKey("url")) {
+    if (!doc["url"].isNull()) {
       url = doc["url"].as<String>();
     }
-    if (doc.containsKey("name")) {
+    if (!doc["name"].isNull()) {
       name = doc["name"].as<String>();
     }
-    if (doc.containsKey("index")) {
+    if (!doc["index"].isNull()) {
       index = doc["index"].as<int>();
     }
   } 
@@ -1555,7 +1575,7 @@ void handleMixer() {
   // Handle GET request - return current mixer status
   if (server.method() == HTTP_GET) {
     // Create JSON document with appropriate size
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     // Add mixer status
     doc["volume"] = player.getVolume();
     doc["bass"] = player.getBass();
@@ -1569,11 +1589,16 @@ void handleMixer() {
     return;
   }
   // Handle POST request - update mixer settings
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   bool hasData = false;
   // Handle JSON payload
   if (server.hasArg("plain")) {
     String json = server.arg("plain");
+    // Reject oversized bodies (JsonDocument grows unbounded)
+    if (json.length() > 256) {
+      sendJsonResponse("error", "Request body too large", 413);
+      return;
+    }
     DeserializationError error = deserializeJson(doc, json);
     // Check for JSON parsing errors
     if (error) {
@@ -1610,7 +1635,7 @@ void handleMixer() {
   }
   bool toneUpdated = false;
   // Handle volume setting
-  if (doc.containsKey("volume")) {
+  if (!doc["volume"].isNull()) {
     int newVolume;
     if (doc["volume"].is<const char*>()) {
       newVolume = atoi(doc["volume"].as<const char*>());
@@ -1625,7 +1650,7 @@ void handleMixer() {
     player.setVolume(newVolume);
   }
   // Handle bass setting
-  if (doc.containsKey("bass")) {
+  if (!doc["bass"].isNull()) {
     int newBass;
     if (doc["bass"].is<const char*>()) {
       newBass = atoi(doc["bass"].as<const char*>());
@@ -1640,7 +1665,7 @@ void handleMixer() {
     toneUpdated = true;
   }
   // Handle mid setting
-  if (doc.containsKey("mid")) {
+  if (!doc["mid"].isNull()) {
     int newMid;
     if (doc["mid"].is<const char*>()) {
       newMid = atoi(doc["mid"].as<const char*>());
@@ -1655,7 +1680,7 @@ void handleMixer() {
     toneUpdated = true;
   }
   // Handle treble setting
-  if (doc.containsKey("treble")) {
+  if (!doc["treble"].isNull()) {
     int newTreble;
     if (doc["treble"].is<const char*>()) {
       newTreble = atoi(doc["treble"].as<const char*>());
@@ -1706,7 +1731,12 @@ void handleImportConfig() {
     return;
   }
   // Parse the JSON data
-  DynamicJsonDocument doc(8192);
+  JsonDocument doc;
+  // Reject oversized bodies (JsonDocument grows unbounded)
+  if (jsonData.length() > 8192) {
+    sendJsonResponse("error", "Request body too large", 413);
+    return;
+  }
   DeserializationError error = deserializeJson(doc, jsonData);
   if (error) {
     Serial.printf("Failed to parse uploaded JSON: %s\n", error.c_str());
@@ -1719,9 +1749,9 @@ void handleImportConfig() {
   bool success = true;
   for (int i = 0; i < 4; i++) {
     const char* filename = configFiles[i];
-    if (doc.containsKey(filename)) {
+    if (!doc[filename].isNull()) {
       String filePath = String("/") + filename;
-      DynamicJsonDocument tempDoc(fileSizes[i]);
+      JsonDocument tempDoc;
       tempDoc.set(doc[filename]);
       if (writeJsonFile(filePath.c_str(), tempDoc)) {
         Serial.println("Saved " + String(filename) + " to SPIFFS");
@@ -1749,7 +1779,7 @@ void handleImportConfig() {
 String generateStatusJSON(bool fullStatus) {
   // Create JSON document with appropriate size
   // Sized for copies of the snapshot strings (url/icyUrl/iconUrl up to 256 each)
-  DynamicJsonDocument doc(1536);
+  JsonDocument doc;
   if (fullStatus) {
     // Snapshot stream info under the spinlock so core 0 callbacks can't
     // modify the strings while they are being serialized

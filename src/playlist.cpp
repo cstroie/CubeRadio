@@ -20,8 +20,8 @@
 #include "main.h"
 #include <ArduinoJson.h>
 
-extern bool readJsonFile(const char* filename, size_t maxFileSize, DynamicJsonDocument& doc);
-extern bool writeJsonFile(const char* filename, DynamicJsonDocument& doc);
+extern bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc);
+extern bool writeJsonFile(const char* filename, JsonDocument& doc);
 
 /**
  * @brief Playlist constructor
@@ -42,7 +42,7 @@ Playlist::Playlist() {
  */
 void Playlist::load() {
   count = 0;
-  DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
+  JsonDocument doc;
   if (!readJsonFile("/playlist.json", PLAYLIST_BUFFER_SIZE, doc)) {
     Serial.println("Failed to load playlist, continuing with empty playlist");
     return;
@@ -57,7 +57,7 @@ void Playlist::load() {
       Serial.println("Warning: Playlist limit reached (20 entries)");
       break;
     }
-    if (item.containsKey("name") && item.containsKey("url")) {
+    if (!item["name"].isNull() && !item["url"].isNull()) {
       const char* name = item["name"];
       const char* url  = item["url"];
       if (name && url && strlen(name) > 0 && strlen(url) > 0) {
@@ -90,7 +90,7 @@ void Playlist::load() {
 void Playlist::save() {
   // Always allocate the maximum allowed buffer; dynamic under-estimation caused
   // silent truncation when entries were near their size limits.
-  DynamicJsonDocument doc(PLAYLIST_BUFFER_SIZE);
+  JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
   // Add playlist entries
   for (int i = 0; i < count; i++) {
@@ -101,7 +101,7 @@ void Playlist::save() {
       continue;
     }
     // Create JSON object for the playlist entry
-    JsonObject item = array.createNestedObject();
+    JsonObject item = array.add<JsonObject>();
     item["name"] = playlist[i].name;
     item["url"] = playlist[i].url;
   }

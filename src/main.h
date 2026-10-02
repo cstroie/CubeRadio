@@ -125,7 +125,7 @@ void audio_id3data(const char *info);
 String generateStatusJSON(bool fullStatus = true);
 
 // JSON file helper functions
-bool readJsonFile(const char* filename, size_t maxFileSize, DynamicJsonDocument& doc);
-bool writeJsonFile(const char* filename, DynamicJsonDocument& doc);
+bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc);
+bool writeJsonFile(const char* filename, JsonDocument& doc);
 
 #endif // MAIN_H
