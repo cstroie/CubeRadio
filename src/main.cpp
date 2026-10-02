@@ -1724,39 +1724,121 @@ void handleImportConfig() {
 
 
 /**
- * @brief Generate JSON status string
- * Creates a JSON string with current player status information
- * @param fullStatus If true, generates full status; if false, generates partial status
- * @return JSON formatted status string
+ * @brief Minimal writer for a flat JSON object in a fixed buffer
+ * @details Builds the object without heap allocations. A field that does not
+ * fit is dropped as a whole, so the output is always valid JSON.
  */
-String generateStatusJSON(bool fullStatus) {
-  // Create JSON document with appropriate size
-  // Holds copies of the snapshot strings (url/iconUrl up to 256 each)
-  JsonDocument doc;
+class JsonObjectWriter {
+public:
+  JsonObjectWriter(char* buffer, size_t capacity) : buf(buffer), cap(capacity) {
+    buf[len++] = '{';
+  }
+  void add(const char* key, const char* value) {
+    size_t mark = begin(key);
+    put('"');
+    for (const char* p = value; p && *p; p++) {
+      uint8_t c = static_cast<uint8_t>(*p);
+      if (c == '"' || c == '\\') {
+        put('\\');
+        put(c);
+      } else if (c < 0x20) {
+        char esc[7];
+        snprintf(esc, sizeof(esc), "\\u%04x", c);
+        append(esc);
+      } else {
+        put(c);
+      }
+    }
+    put('"');
+    end(mark);
+  }
+  void add(const char* key, int value) {
+    size_t mark = begin(key);
+    char num[12];
+    snprintf(num, sizeof(num), "%d", value);
+    append(num);
+    end(mark);
+  }
+  void add(const char* key, bool value) {
+    size_t mark = begin(key);
+    append(value ? "true" : "false");
+    end(mark);
+  }
+  // Close the object; the buffer is NUL-terminated. Returns the length.
+  size_t finish() {
+    buf[len++] = '}';
+    buf[len] = '\0';
+    return len;
+  }
+private:
+  size_t begin(const char* key) {
+    size_t mark = len;
+    ok = true;
+    if (fields > 0) put(',');
+    put('"');
+    append(key);
+    put('"');
+    put(':');
+    return mark;
+  }
+  void end(size_t mark) {
+    if (ok) {
+      fields++;
+    } else {
+      len = mark;
+    }
+  }
+  // Always keep room for the closing brace and the terminator
+  void put(char c) {
+    if (len + 2 < cap) {
+      buf[len++] = c;
+    } else {
+      ok = false;
+    }
+  }
+  void append(const char* text) {
+    while (*text) put(*text++);
+  }
+  char* buf;
+  size_t cap;
+  size_t len = 0;
+  int fields = 0;
+  bool ok = true;
+};
+
+/**
+ * @brief Generate the JSON status message
+ * Writes the current player status into a caller-provided buffer, without
+ * building a JsonDocument or String on the heap
+ * @param buf Output buffer (STATUS_JSON_SIZE bytes; a field that does not fit is dropped)
+ * @param size Size of the output buffer
+ * @param fullStatus If true, generates full status; if false, only the bitrate
+ * @return Length of the JSON text
+ */
+size_t generateStatusJSON(char* buf, size_t size, bool fullStatus) {
+  JsonObjectWriter json(buf, size);
   if (fullStatus) {
     // Snapshot stream info under the spinlock so core 0 callbacks can't
     // modify the strings while they are being serialized
     StreamInfoData info;
     player.getStreamInfoSnapshot(info);
-    // Populate JSON document with all status values
-    doc["playing"] = player.isPlaying();
-    doc["streamURL"] = info.url;
-    doc["streamName"] = info.name;
-    doc["streamTitle"] = info.title;
-    doc["streamIconURL"] = info.iconUrl;
-    doc["bitrate"] = info.bitrate;
-    doc["volume"] = player.getVolume();
-    doc["bass"] = player.getBass();
-    doc["mid"] = player.getMid();
-    doc["treble"] = player.getTreble();
+    // Numbers first and long URLs last: if a field ever overflows the
+    // buffer it is dropped, and that should be a URL, not the state
+    json.add("playing", player.isPlaying());
+    json.add("bitrate", info.bitrate);
+    json.add("volume", player.getVolume());
+    json.add("bass", player.getBass());
+    json.add("mid", player.getMid());
+    json.add("treble", player.getTreble());
+    json.add("streamName", info.name);
+    json.add("streamTitle", info.title);
+    json.add("streamURL", info.url);
+    json.add("streamIconURL", info.iconUrl);
   } else {
     // Only include the bitrate in partial status
-    doc["bitrate"] = player.getBitrate();
+    json.add("bitrate", player.getBitrate());
   }
-  // Serialize JSON to string
-  String json;
-  serializeJson(doc, json);
-  return json;
+  return json.finish();
 }
 
 /**
@@ -1768,16 +1850,16 @@ String generateStatusJSON(bool fullStatus) {
 void sendStatusToClients(bool fullStatus) {
   // Only broadcast if WebSocket server has clients AND they are connected
   if (webSocket.connectedClients() > 0) {
-    String status = generateStatusJSON(fullStatus);
+    char status[STATUS_JSON_SIZE];
+    size_t len = generateStatusJSON(status, sizeof(status), fullStatus);
     // Track full and partial formats separately: comparing a partial
     // {"bitrate":N} frame against the last full status (or vice versa)
     // always looks "changed" and causes redundant broadcasts
     static String previousPartialStatus = "";
     String& previous = fullStatus ? previousStatus : previousPartialStatus;
     // Only send if status has changed
-    if (status != previous) {
-      // Use broadcastTXT with error handling
-      webSocket.broadcastTXT(status);
+    if (previous != status) {
+      webSocket.broadcastTXT(status, len);
       // Update previous status
       previous = status;
     }
@@ -1928,10 +2010,11 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       {
         // The handshake is complete when this event fires; send the full
         // status immediately so the new client has the current state
-        String status = generateStatusJSON(true);
+        char status[STATUS_JSON_SIZE];
+        size_t len = generateStatusJSON(status, sizeof(status), true);
         // Send status to newly connected client with error checking
         if (webSocket.clientIsConnected(num)) {
-            webSocket.sendTXT(num, status);
+            webSocket.sendTXT(num, status, len);
         }
       }
       break;

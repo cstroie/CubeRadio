@@ -121,7 +121,9 @@ void audio_icydescription(const char *info);
 void audio_id3data(const char *info);
 
 // Utility functions
-String generateStatusJSON(bool fullStatus = true);
+// Fits a full status with typical escaping; an oversized field is dropped
+#define STATUS_JSON_SIZE 1536
+size_t generateStatusJSON(char* buf, size_t size, bool fullStatus = true);
 
 // JSON file helper functions
 bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc);
