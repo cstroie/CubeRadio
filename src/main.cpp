@@ -286,24 +286,9 @@ bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc) {
     file.close();
     return false;
   }
-  // Allocate buffer for file content
-  std::unique_ptr<char[]> buf(new char[size + 1]);
-  if (!buf) {
-    Serial.printf("Error: Failed to allocate memory for JSON file: %s\n", filename);
-    file.close();
-    return false;
-  }
-  // Read the file content
-  if (file.readBytes(buf.get(), size) != size) {
-    Serial.printf("Failed to read JSON file: %s\n", filename);
-    file.close();
-    return false;
-  }
-  // Null-terminate the buffer
-  buf[size] = '\0';
+  // Parse straight from the file: no intermediate copy of its content
+  DeserializationError error = deserializeJson(doc, file);
   file.close();
-  // Parse the JSON document
-  DeserializationError error = deserializeJson(doc, buf.get());
   if (error) {
     Serial.printf("Failed to parse JSON file %s: %s\n", filename, error.c_str());
     return false;
