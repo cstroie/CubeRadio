@@ -37,6 +37,12 @@ pio run -t upload       # Flash firmware
 pio run -t uploadfs     # Upload data/ to SPIFFS
 ```
 
+`uploadfs` builds the image from a staged copy of `data/` (`tools/gzip_data.py`,
+a `pre:` extra script): `.html`, `.css`, `.js` and `.svg` are stored gzipped only
+and served with `Content-Encoding: gzip`; JSON data files are copied unchanged.
+Edit the uncompressed files in `data/`. Browsers cache `scripts.js` and
+`styles.css` for an hour, so reload hard after an `uploadfs`.
+
 ### Touch buttons (DISABLE_TOUCH)
 
 The capacitive touch interface is **compiled out by default** via the

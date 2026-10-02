@@ -2139,9 +2139,12 @@ void setupWebServer() {
   server.serveStatic("/wifi", SPIFFS, "/wifi.html");
   server.serveStatic("/config", SPIFFS, "/config.html");
   server.serveStatic("/about", SPIFFS, "/about.html");
-  server.serveStatic("/styles.css", SPIFFS, "/styles.css");
-  server.serveStatic("/scripts.js", SPIFFS, "/scripts.js");
-  server.serveStatic("/pico.min.css", SPIFFS, "/pico.min.css");
+  // Assets are stored gzipped (tools/gzip_data.py) and cached by the browser:
+  // our own files for an hour (so a new uploadfs shows up soon), the
+  // vendored PicoCSS for 30 days
+  server.serveStatic("/styles.css", SPIFFS, "/styles.css", "max-age=3600");
+  server.serveStatic("/scripts.js", SPIFFS, "/scripts.js", "max-age=3600");
+  server.serveStatic("/pico.min.css", SPIFFS, "/pico.min.css", "max-age=2592000");
   server.serveStatic("/favicon.ico", SPIFFS, "/favicon.ico");
   server.serveStatic("/logo.png", SPIFFS, "/logo.png");
 }
