@@ -44,7 +44,6 @@ WebServer server(80);
 WebSocketsServer webSocket(81);
 WiFiServer mpdServer(6600);
 const char* BUILD_TIME = __DATE__ "T" __TIME__"Z";
-String previousStatus = "";
 
 
 
@@ -1852,16 +1851,21 @@ void sendStatusToClients(bool fullStatus) {
   if (webSocket.connectedClients() > 0) {
     char status[STATUS_JSON_SIZE];
     size_t len = generateStatusJSON(status, sizeof(status), fullStatus);
-    // Track full and partial formats separately: comparing a partial
-    // {"bitrate":N} frame against the last full status (or vice versa)
-    // always looks "changed" and causes redundant broadcasts
-    static String previousPartialStatus = "";
-    String& previous = fullStatus ? previousStatus : previousPartialStatus;
+    // Detect changes with a 32-bit FNV-1a hash instead of keeping the last
+    // message in RAM. Full and partial formats are tracked separately:
+    // comparing a partial {"bitrate":N} frame against the last full status
+    // (or vice versa) always looks "changed" and causes redundant broadcasts
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+      hash = (hash ^ static_cast<uint8_t>(status[i])) * 16777619u;
+    }
+    static uint32_t previousFullHash = 0;
+    static uint32_t previousPartialHash = 0;
+    uint32_t& previous = fullStatus ? previousFullHash : previousPartialHash;
     // Only send if status has changed
-    if (previous != status) {
+    if (hash != previous) {
       webSocket.broadcastTXT(status, len);
-      // Update previous status
-      previous = status;
+      previous = hash;
     }
   }
 }
