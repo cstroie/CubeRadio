@@ -143,21 +143,6 @@ void Player::setStreamTitle(const char* title) {
 }
 
 /**
- * @brief Set stream ICY URL
- * @param icyUrl New stream ICY URL
- */
-void Player::setStreamIcyUrl(const char* icyUrl) {
-  taskENTER_CRITICAL(&spinlock);
-  if (icyUrl) {
-    strncpy(streamInfo.icyUrl, icyUrl, sizeof(streamInfo.icyUrl) - 1);
-    streamInfo.icyUrl[sizeof(streamInfo.icyUrl) - 1] = '\0';
-  } else {
-    streamInfo.icyUrl[0] = '\0';
-  }
-  taskEXIT_CRITICAL(&spinlock);
-}
-
-/**
  * @brief Set stream icon URL
  * @param iconUrl New stream icon URL
  */
@@ -182,7 +167,6 @@ void Player::clearStreamInfo() {
   streamInfo.url[0] = '\0';
   streamInfo.name[0] = '\0';
   streamInfo.title[0] = '\0';
-  streamInfo.icyUrl[0] = '\0';
   streamInfo.iconUrl[0] = '\0';
   streamInfo.bitrate = 0;
   taskEXIT_CRITICAL(&spinlock);

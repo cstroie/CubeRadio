@@ -1312,7 +1312,6 @@ function loadCoverImage(url, onFail) {
  * Fetch artist image from TheAudioDB
  * @param {string} artistName - The name of the artist to search for
  * @param {string} iconUrl - The stream icon URL (fallback)
- * @param {string} icyUrl - The ICY URL (fallback for favicon)
  */
 function fetchArtistImageFromTheAudioDB(artistName, iconUrl) {
   // Clean up the artist name for better search results
@@ -1593,14 +1592,6 @@ function connectWebSocket() {
             }
             prev["bitrate"] = status.bitrate;
             streamTitleElement.textContent = displayText;
-          }
-        }
-
-        // Handle ICY URL if available and changed
-        if (status.streamIcyURL !== prev.streamIcyURL) {
-          if (status.streamIcyURL) {
-            console.log("Received ICY URL:", status.streamIcyURL);
-            prev["streamIcyURL"] = status.streamIcyURL;
           }
         }
 

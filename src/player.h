@@ -37,7 +37,6 @@ struct StreamInfoData {
   char url[256];    ///< Stream URL
   char name[128];   ///< Stream name
   char title[128];  ///< Current track title
-  char icyUrl[256]; ///< ICY URL
   char iconUrl[256];///< Stream icon URL
   int bitrate;      ///< Stream bitrate
 };
@@ -135,14 +134,12 @@ public:
   const char* getStreamUrl() const { return streamInfo.url; }
   const char* getStreamName() const { return streamInfo.name; }
   const char* getStreamTitle() const { return streamInfo.title; }
-  const char* getStreamIcyUrl() const { return streamInfo.icyUrl; }
   const char* getStreamIconUrl() const { return streamInfo.iconUrl; }
 
   // Stream info setters
   void setStreamUrl(const char* url);
   void setStreamName(const char* name);
   void setStreamTitle(const char* title);
-  void setStreamIcyUrl(const char* icyUrl);
   void setStreamIconUrl(const char* iconUrl);
   void clearStreamInfo();
 

@@ -191,10 +191,10 @@ void audio_info(const char *info) {
  */
 void audio_icyurl(const char *info) {
   if (info && strlen(info) > 0) {
+    // Only logged: nothing on the device or in the web UI uses the station
+    // homepage, so it is not kept in RAM
     Serial.print("ICY URL: ");
     Serial.println(info);
-    player.setStreamIcyUrl(info);
-    pendingCallbackUpdate = true;
   }
 }
 
@@ -1742,7 +1742,7 @@ void handleImportConfig() {
  */
 String generateStatusJSON(bool fullStatus) {
   // Create JSON document with appropriate size
-  // Sized for copies of the snapshot strings (url/icyUrl/iconUrl up to 256 each)
+  // Holds copies of the snapshot strings (url/iconUrl up to 256 each)
   JsonDocument doc;
   if (fullStatus) {
     // Snapshot stream info under the spinlock so core 0 callbacks can't
@@ -1754,7 +1754,6 @@ String generateStatusJSON(bool fullStatus) {
     doc["streamURL"] = info.url;
     doc["streamName"] = info.name;
     doc["streamTitle"] = info.title;
-    doc["streamIcyURL"] = info.icyUrl;
     doc["streamIconURL"] = info.iconUrl;
     doc["bitrate"] = info.bitrate;
     doc["volume"] = player.getVolume();
