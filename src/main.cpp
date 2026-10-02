@@ -33,6 +33,7 @@
 #include "Spleen16x32.h"
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <stdarg.h>
 
 
 // Global variables definitions
@@ -1086,33 +1087,73 @@ void handleTouch() {
 
 
 /**
+ * @brief Buffered writer for chunked HTTP responses
+ * @details Collects small pieces into a fixed buffer and sends a chunk each
+ * time it fills up, so a response is never assembled in RAM. The response is
+ * terminated when the writer goes out of scope.
+ */
+class ChunkedResponse {
+public:
+  ChunkedResponse(int code, const char* contentType) {
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(code, contentType, "");
+  }
+  ~ChunkedResponse() {
+    flush();
+    // Terminating zero-length chunk
+    server.sendContent("");
+  }
+  void write(const char* data, size_t len) {
+    while (len > 0) {
+      if (used == sizeof(buf)) flush();
+      size_t n = min(len, sizeof(buf) - used);
+      memcpy(buf + used, data, n);
+      used += n;
+      data += n;
+      len -= n;
+    }
+  }
+  void print(const char* text) {
+    write(text, strlen(text));
+  }
+  void printf(const char* format, ...) {
+    char tmp[96];
+    va_list args;
+    va_start(args, format);
+    int len = vsnprintf(tmp, sizeof(tmp), format, args);
+    va_end(args);
+    if (len > 0) write(tmp, min((size_t)len, sizeof(tmp) - 1));
+  }
+  // Escape text (may come from untrusted stream metadata) for HTML content or attributes
+  void printEscaped(const char* text) {
+    for (const char* p = text; p && *p; p++) {
+      switch (*p) {
+        case '&':  print("&amp;");  break;
+        case '<':  print("&lt;");   break;
+        case '>':  print("&gt;");   break;
+        case '"':  print("&quot;"); break;
+        case '\'': print("&#39;");  break;
+        default:   write(p, 1);     break;
+      }
+    }
+  }
+private:
+  void flush() {
+    if (used > 0) {
+      server.sendContent(buf, used);
+      used = 0;
+    }
+  }
+  char buf[1024];
+  size_t used = 0;
+};
+
+/**
  * @brief Handle simple web page request
  * Serves a minimal HTML page for controlling the radio
  * This function provides a simple interface with play/stop controls
  * and stream selection without CSS or JavaScript
  */
-/**
- * @brief Escape a string for safe inclusion in HTML content or attributes
- * @param text The raw text (may come from untrusted stream metadata)
- * @return HTML-escaped copy of the text
- */
-static String htmlEscape(const char* text) {
-  String out;
-  if (text == nullptr) return out;
-  out.reserve(strlen(text));
-  for (const char* p = text; *p; p++) {
-    switch (*p) {
-      case '&':  out += "&amp;";  break;
-      case '<':  out += "&lt;";   break;
-      case '>':  out += "&gt;";   break;
-      case '"':  out += "&quot;"; break;
-      case '\'': out += "&#39;";  break;
-      default:   out += *p;       break;
-    }
-  }
-  return out;
-}
-
 void handleSimpleWebPage() {
   if (server.method() == HTTP_POST) {
     // Handle form submission
@@ -1183,91 +1224,61 @@ void handleSimpleWebPage() {
     }
   }
   
-  // Precompute volume options to avoid string fragmentation
-  char volumeOptions[1024];  // Buffer for volume options (sufficient for 23 options)
-  volumeOptions[0] = '\0';   // Initialize empty string
-  for (int i = 0; i <= 22; i++) {
-    char option[40];  // Buffer for individual option
-    if (i == player.getVolume()) {
-      snprintf(option, sizeof(option), "<option value='%d' selected>%d</option>", i, i);
-    } else {
-      snprintf(option, sizeof(option), "<option value='%d'>%d</option>", i, i);
-    }
-    strncat(volumeOptions, option, sizeof(volumeOptions) - strlen(volumeOptions) - 1);
-  }
-  
-  // Precompute playlist options to avoid string fragmentation
-  // 20 entries × up to ~160 chars of escaped name + markup
-  char playlistOptions[3328];
-  playlistOptions[0] = '\0';   // Initialize empty string
-  if (player.getPlaylistCount() > 0) {
-    for (int i = 0; i < player.getPlaylistCount(); i++) {
-      char option[160];
-      String escapedName = htmlEscape(player.getPlaylistItem(i).name);
-      if (i == player.getPlaylistIndex()) {
-        snprintf(option, sizeof(option), "<option value='%d' selected>%s</option>", i, escapedName.c_str());
-      } else {
-        snprintf(option, sizeof(option), "<option value='%d'>%s</option>", i, escapedName.c_str());
-      }
-      strncat(playlistOptions, option, sizeof(playlistOptions) - strlen(playlistOptions) - 1);
-    }
-  }
-  
-  // Create HTML response using precomputed strings to minimize fragmentation;
-  // reserve the full page size up front to avoid dozens of reallocations
-  String html;
-  html.reserve(4096 + strlen(playlistOptions) + strlen(volumeOptions));
-  html = "<!DOCTYPE html><html><head><title>CubeRadio</title>";
-  html += "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css\">";
-  html += "</head><body><header><h1>CubeRadio</h1></header><main>";
-  html += "<section><h2>Status: ";
-  html += player.isPlaying() ? "PLAY" : "STOP";
-  html += "</h2>";
-  
+  // Stream the page in chunks: RAM use no longer grows with the playlist
+  ChunkedResponse page(200, "text/html");
+  page.print("<!DOCTYPE html><html><head><title>CubeRadio</title>");
+  page.print("<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css\">");
+  page.print("</head><body><header><h1>CubeRadio</h1></header><main>");
+  page.print("<section><h2>Status: ");
+  page.print(player.isPlaying() ? "PLAY" : "STOP");
+  page.print("</h2>");
   // Show current stream name
   if (player.isPlaying() && player.getStreamTitle()[0]) {
-    html += "<p><b>Now playing:</b> ";
-    html += htmlEscape(player.getStreamTitle());
-    html += "</p>";
+    page.print("<p><b>Now playing:</b> ");
+    page.printEscaped(player.getStreamTitle());
+    page.print("</p>");
   } else if (!player.isPlaying() && player.isPlaylistIndexValid()) {
-    html += "<p><b>Selected:</b> ";
-    html += htmlEscape(player.getPlaylistItem(player.getPlaylistIndex()).name);
-    html += "</p>";
+    page.print("<p><b>Selected:</b> ");
+    page.printEscaped(player.getPlaylistItem(player.getPlaylistIndex()).name);
+    page.print("</p>");
   }
-  html += "</section><section><h2>Controls</h2>";
-  html += "<form method='post'><fieldset role='group'>";
-  html += "<button name='action' value='play' type='submit'>Play</button> ";
-  html += "<button name='action' value='stop' type='submit'>Stop</button>";
-  html += "</fieldset></form>";
-  html += "<form method='post'><fieldset role='group'>";
-  html += "<select name='volume' id='volume'>";
-  html += volumeOptions;  // Use precomputed volume options
-  html += "</select>";
-  html += "<button name='action' value='volume' type='submit'>Set&nbsp;volume</button>";
-  html += "</fieldset></form></section><section><h2>Playlist</h2>";
-  
+  page.print("</section><section><h2>Controls</h2>");
+  page.print("<form method='post'><fieldset role='group'>");
+  page.print("<button name='action' value='play' type='submit'>Play</button> ");
+  page.print("<button name='action' value='stop' type='submit'>Stop</button>");
+  page.print("</fieldset></form>");
+  page.print("<form method='post'><fieldset role='group'>");
+  page.print("<select name='volume' id='volume'>");
+  for (int i = 0; i <= 22; i++) {
+    page.printf("<option value='%d'%s>%d</option>", i, (i == player.getVolume()) ? " selected" : "", i);
+  }
+  page.print("</select>");
+  page.print("<button name='action' value='volume' type='submit'>Set&nbsp;volume</button>");
+  page.print("</fieldset></form></section><section><h2>Playlist</h2>");
   // Show stream selection dropdown if we have a playlist
   if (player.getPlaylistCount() > 0) {
-    html += "<form method='post'><fieldset role='group'>";
-    html += "<select name='stream' id='stream'>";
-    html += playlistOptions;  // Use precomputed playlist options
-    html += "</select>";
-    html += "<button name='action' value='play' type='submit'>Play&nbsp;selected</button>";
-    html += "</fieldset></form>";
+    page.print("<form method='post'><fieldset role='group'>");
+    page.print("<select name='stream' id='stream'>");
+    int selected = player.getPlaylistIndex();
+    player.forEachPlaylistItem([&](int i, const StreamInfo& item) {
+      page.printf("<option value='%d'%s>", i, (i == selected) ? " selected" : "");
+      page.printEscaped(item.name);
+      page.print("</option>");
+      return true;
+    });
+    page.print("</select>");
+    page.print("<button name='action' value='play' type='submit'>Play&nbsp;selected</button>");
+    page.print("</fieldset></form>");
   } else {
-    html += "<p>No streams in playlist.</p>";
+    page.print("<p>No streams in playlist.</p>");
   }
-  
   // Add instant play input for custom stream URL even when no playlist
-  html += "<h2>Play instant stream</h2>";
-  html += "<form method='post'><fieldset role='group'>";
-  html += "<input type='url' name='url' id='url' placeholder='http://example.com/stream'>";
-  html += "<button name='action' value='instant' type='submit'>Play&nbsp;stream</button>";
-  html += "</fieldset></form></section></main>";
-  html += "<footer><p>CubeRadio Simple Interface</p></footer></body></html>";
-  
-  // Send the HTML response
-  server.send(200, "text/html", html);
+  page.print("<h2>Play instant stream</h2>");
+  page.print("<form method='post'><fieldset role='group'>");
+  page.print("<input type='url' name='url' id='url' placeholder='http://example.com/stream'>");
+  page.print("<button name='action' value='instant' type='submit'>Play&nbsp;stream</button>");
+  page.print("</fieldset></form></section></main>");
+  page.print("<footer><p>CubeRadio Simple Interface</p></footer></body></html>");
 }
 
 
@@ -1275,30 +1286,20 @@ void handleSimpleWebPage() {
  * @brief Handle GET request for streams
  * Streams the playlist as JSON Lines (one {"name","url"} object per line)
  * @details Only entries the device considers valid are sent, so line N of the
- * response is playlist index N. Lines are batched into a small buffer and sent
- * with chunked transfer encoding; RAM use does not grow with the playlist.
+ * response is playlist index N. The response is sent in chunks; RAM use does
+ * not grow with the playlist.
  */
 void handleGetStreams() {
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "application/x-ndjson", "");
-  char buf[1460];
-  size_t used = 0;
+  ChunkedResponse response(200, "application/x-ndjson");
   char line[PLAYLIST_LINE_MAX];
   player.forEachPlaylistItem([&](int, const StreamInfo& item) {
-    size_t len = Playlist::formatLine(item, line, sizeof(line));
-    if (len == 0) return true;
-    if (used + len + 1 > sizeof(buf)) {
-      server.sendContent(buf, used);
-      used = 0;
+    size_t len = Playlist::formatLine(item, line, sizeof(line) - 1);
+    if (len > 0) {
+      line[len++] = '\n';
+      response.write(line, len);
     }
-    memcpy(buf + used, line, len);
-    used += len;
-    buf[used++] = '\n';
     return true;
   });
-  if (used > 0) server.sendContent(buf, used);
-  // Terminating zero-length chunk
-  server.sendContent("");
 }
 
 /**
