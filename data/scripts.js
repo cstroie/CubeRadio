@@ -1280,32 +1280,32 @@ async function importAllConfiguration() {
 
 
 /**
- * @brief Check if an image exists at a given URL
- * @description Creates an image element and attempts to load the image to verify existence
- * @param {string} url - The URL of the image to check
- * @returns {Promise<boolean>} True if image exists, false otherwise
+ * @brief Show an image as cover art, loading it in the browser first
+ * @description Images need no CORS, so the browser fetches them directly. The
+ * device proxy, which costs the radio a connection and RAM, is only used when
+ * the direct load fails (e.g. hotlink protection).
+ * @param {string} url - Image URL
+ * @param {Function} onFail - Called when neither the direct nor the proxied load works
  */
-async function checkImageExists(url) {
-  console.log("Checking image existence:", url);
-  
-  // Replace HTTPS with HTTP since the proxy crashes on SSL
-  let proxyUrl = url;
-  if (url.startsWith('https://')) {
-    proxyUrl = 'http://' + url.substring(8);
-  }
-  
-  try {
-    // Use proxy to check if image exists
-    const proxyRequestUrl = `/api/proxy?url=${encodeURIComponent(proxyUrl)}`;
-    const response = await fetch(proxyRequestUrl, { method: 'HEAD' });
-    const contentType = response.headers.get('Content-Type');
-    
-    // Check if response is successful and content type is an image
-    return response.ok && contentType && contentType.startsWith('image/');
-  } catch (error) {
-    console.log("Image check failed:", error);
-    return false;
-  }
+function loadCoverImage(url, onFail) {
+  const tryLoad = (src, next) => {
+    const img = new Image();
+    img.onload = () => {
+      const coverArtElement = $("cover-art");
+      if (coverArtElement) {
+        coverArtElement.src = src;
+        coverArtElement.style.display = "block";
+      }
+    };
+    img.onerror = next;
+    img.src = src;
+  };
+  tryLoad(url, () => {
+    // Replace HTTPS with HTTP since the proxy crashes on SSL
+    const httpUrl = url.startsWith("https://") ? "http://" + url.substring(8) : url;
+    console.log("Direct image load failed, trying device proxy:", httpUrl);
+    tryLoad(`/api/proxy?url=${encodeURIComponent(httpUrl)}`, onFail);
+  });
 }
 
 /**
@@ -1375,29 +1375,9 @@ function fetchArtistImageFromTheAudioDB(artistName, iconUrl) {
  * @param {string} iconUrl - The stream icon URL
  */
 function handleImageFallback(iconUrl) {
-  // First try the stream icon URL through proxy
   if (iconUrl) {
     console.log("Trying stream icon URL:", iconUrl);
-    // Replace HTTPS with HTTP since the proxy crashes on SSL
-    let httpUrl = iconUrl;
-    if (iconUrl.startsWith('https://')) {
-      httpUrl = 'http://' + iconUrl.substring(8);
-    }
-    iconUrl = httpUrl;
-    // Check if icon URL is a valid image through proxy  
-    checkImageExists(iconUrl).then((exists) => {
-      if (exists) {
-        const coverArtElement = $("cover-art");
-        if (coverArtElement) {
-          // Use proxy URL for the image
-          const proxyImageUrl = `/api/proxy?url=${encodeURIComponent(iconUrl)}`;
-          coverArtElement.src = proxyImageUrl;
-          coverArtElement.style.display = "block";
-        }
-      } else {
-        resetToDefaultCoverArt();
-      }
-    });
+    loadCoverImage(iconUrl, resetToDefaultCoverArt);
   } else {
     resetToDefaultCoverArt();
   }
