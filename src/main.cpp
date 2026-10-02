@@ -2145,8 +2145,10 @@ void setupWebServer() {
   server.serveStatic("/styles.css", SPIFFS, "/styles.css", "max-age=3600");
   server.serveStatic("/scripts.js", SPIFFS, "/scripts.js", "max-age=3600");
   server.serveStatic("/pico.min.css", SPIFFS, "/pico.min.css", "max-age=2592000");
-  server.serveStatic("/favicon.ico", SPIFFS, "/favicon.ico");
-  server.serveStatic("/logo.png", SPIFFS, "/logo.png");
+  // cd.svg is the logo and favicon; /favicon.ico is what browsers request
+  // when a page does not declare an icon
+  server.serveStatic("/cd.svg", SPIFFS, "/cd.svg", "max-age=2592000");
+  server.serveStatic("/favicon.ico", SPIFFS, "/cd.svg", "max-age=2592000");
 }
 
 

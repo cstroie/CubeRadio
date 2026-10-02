@@ -90,7 +90,7 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
   pico.min.css    PicoCSS v2 framework
   playlist.jsonl  Default radio stations (JSON Lines, one station per line)
   wifi.json       Stored WiFi credentials (up to 5 networks)
-  cd.svg / logo.png / favicon.ico
+  cd.svg          Logo and favicon
 ```
 
 ---
