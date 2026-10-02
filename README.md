@@ -109,7 +109,7 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 | `/api/streams`            | POST   | Replace the playlist (JSON Lines body)|
 | `/api/player`             | GET/POST | Playback control and player status  |
 | `/api/mixer`              | GET/POST | Volume and bass/mid/treble          |
-| `/api/proxy`              | GET/POST/HEAD | Proxy requests (e.g. favicons) |
+| `/api/proxy`              | GET    | Proxy plain HTTP requests (remote playlists, cover art) |
 | `/api/status`             | GET    | Get current player status             |
 | `/api/config`             | GET    | Get current configuration             |
 | `/api/config`             | POST   | Update configuration                  |
@@ -156,6 +156,9 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 - Configuration import no longer carries the playlist; the web UI uploads it separately
 - Cover art is loaded directly by the browser, with the device proxy as fallback
 - `streamIcyURL` removed from the status JSON
+- `/api/proxy` accepts GET and plain `http://` URLs only
+- Web assets are stored gzipped in SPIFFS and cached by the browser
+- WiFi-save and config-import bodies are spooled to SPIFFS instead of RAM
 - Removed ArduinoOTA support
 - `data/wifi.json` is no longer tracked; use `data/wifi.json.example`
 

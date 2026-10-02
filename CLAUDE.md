@@ -215,7 +215,7 @@ The playlist is written to `/playlist.tmp`, validated line by line, then swapped
 | GET | `/api/wifi/scan` | Scan WiFi networks |
 | POST | `/api/wifi/save` | Save credentials |
 | GET | `/api/wifi/status` | Connection status |
-| GET | `/api/proxy` | Proxy remote playlist URLs |
+| GET | `/api/proxy` | Proxy remote playlists / cover art (plain HTTP only; HTTPS is refused to save heap) |
 | GET/POST | `/w` | Simple fallback HTML interface (sent in chunks) |
 
 Static assets served from SPIFFS via `server.serveStatic()`.

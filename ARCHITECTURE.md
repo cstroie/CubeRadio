@@ -210,7 +210,7 @@ Up to three capacitive touch buttons (play, next, prev), all optional (pin = -1 
 | `GET /api/wifi/scan` | `WiFi.scanNetworks()` | blocking scan |
 | `POST /api/wifi/save` | write `wifi.json` | reconnects |
 | `GET /api/wifi/status` | current connection info | none |
-| `GET /api/proxy` | `HTTPClient` fetch | proxy for CORS |
+| `GET /api/proxy` | `HTTPClient` fetch, plain HTTP only | proxy for CORS |
 | `GET/POST /w` | `handleSimpleWebPage()` | fallback control UI, sent in chunks |
 
 Static assets served from SPIFFS via `server.serveStatic()`.
