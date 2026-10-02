@@ -1273,106 +1273,69 @@ void handleSimpleWebPage() {
 
 /**
  * @brief Handle GET request for streams
- * Returns the current playlist as JSON
- * This function serves the current playlist in JSON format. If the playlist file
- * doesn't exist, it creates a default empty one.
+ * Streams the playlist as JSON Lines (one {"name","url"} object per line)
+ * @details Only entries the device considers valid are sent, so line N of the
+ * response is playlist index N. Lines are batched into a small buffer and sent
+ * with chunked transfer encoding; RAM use does not grow with the playlist.
  */
 void handleGetStreams() {
-  // Yield to other tasks before processing
-  yield();
-  // Serialize from the authoritative in-memory playlist so the response always
-  // matches what the device is actually using, even if the last SPIFFS save failed.
-  JsonDocument doc;
-  JsonArray array = doc.to<JsonArray>();
-  for (int i = 0; i < player.getPlaylistCount(); i++) {
-    const StreamInfo& si = player.getPlaylistItem(i);
-    JsonObject item = array.add<JsonObject>();
-    item["name"] = si.name;
-    item["url"]  = si.url;
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/x-ndjson", "");
+  char buf[1460];
+  size_t used = 0;
+  char line[PLAYLIST_LINE_MAX];
+  player.forEachPlaylistItem([&](int, const StreamInfo& item) {
+    size_t len = Playlist::formatLine(item, line, sizeof(line));
+    if (len == 0) return true;
+    if (used + len + 1 > sizeof(buf)) {
+      server.sendContent(buf, used);
+      used = 0;
+    }
+    memcpy(buf + used, line, len);
+    used += len;
+    buf[used++] = '\n';
+    return true;
+  });
+  if (used > 0) server.sendContent(buf, used);
+  // Terminating zero-length chunk
+  server.sendContent("");
+}
+
+/**
+ * @brief Receive the body of POST /api/streams
+ * @details The JSONL body is streamed straight into a temporary SPIFFS file
+ * and validated line by line, so the request is never held in RAM.
+ */
+void handlePostStreamsUpload() {
+  HTTPRaw& raw = server.raw();
+  switch (raw.status) {
+    case RAW_START:
+      player.beginPlaylistUpload();
+      break;
+    case RAW_WRITE:
+      player.writePlaylistUpload(raw.buf, raw.currentSize);
+      break;
+    case RAW_ABORTED:
+      player.abortPlaylistUpload();
+      break;
+    default:
+      break;
   }
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-  // Yield to other tasks after processing
   yield();
 }
 
 /**
  * @brief Handle POST request for streams
- * Updates the playlist with new JSON data and saves to SPIFFS
- * This function receives a new playlist via HTTP POST, validates it, and saves it to SPIFFS.
- * It supports both JSON array format and validates each stream entry.
+ * Replaces the playlist with the uploaded JSON Lines body
+ * @details Every line must be a {"name","url"} object with an http(s) URL;
+ * blank lines are ignored. On any invalid line the old playlist is kept.
+ * An empty playlist is sent as a single blank line.
  */
 void handlePostStreams() {
-  // Get the JSON data from the request
-  String jsonData = server.arg("plain");
-  // Validate that we received data
-  if (jsonData.length() == 0) {
-    sendJsonResponse("error", "Missing JSON data");
+  if (!player.endPlaylistUpload()) {
+    sendJsonResponse("error", player.getPlaylistUploadError());
     return;
   }
-  // Parse the JSON data
-  JsonDocument doc;
-  // Reject oversized bodies (JsonDocument grows unbounded)
-  if (jsonData.length() > 4096) {
-    sendJsonResponse("error", "Request body too large", 413);
-    return;
-  }
-  DeserializationError error = deserializeJson(doc, jsonData);
-  // Check for JSON parsing errors
-  if (error) {
-    Serial.print("JSON parsing error: ");
-    Serial.println(error.c_str());
-    sendJsonResponse("error", "Invalid JSON format");
-    return;
-  }
-  // Ensure it's an array
-  if (!doc.is<JsonArray>()) {
-    sendJsonResponse("error", "JSON root must be an array");
-    return;
-  }
-  JsonArray array = doc.as<JsonArray>();
-  if (array.size() > MAX_PLAYLIST_SIZE) {
-    sendJsonResponse("error", "Playlist exceeds maximum size");
-    return;
-  }
-  // Validate the entire incoming array BEFORE touching the in-memory playlist.
-  // Clearing first and then aborting on a bad entry would leave the playlist destroyed.
-  for (JsonObject item : array) {
-    if (item["name"].isNull() || item["url"].isNull()) {
-      sendJsonResponse("error", "Each item must have 'name' and 'url' fields");
-      return;
-    }
-    const char* name = item["name"];
-    const char* url  = item["url"];
-    if (!name || !url || strlen(name) == 0 || strlen(url) == 0) {
-      sendJsonResponse("error", "Name and URL cannot be empty");
-      return;
-    }
-    if (!VALIDATE_URL(url)) {
-      sendJsonResponse("error", "Invalid URL format");
-      return;
-    }
-    // Reject instead of silently truncating to a URL that can never connect
-    if (strlen(url) >= STREAM_URL_SIZE) {
-      sendJsonResponse("error", "URL too long (max 255 characters)");
-      return;
-    }
-  }
-  // All entries valid — now replace the in-memory playlist
-  player.clearPlaylist();
-  for (JsonObject item : array) {
-    player.addPlaylistItem(item["name"], item["url"]);
-  }
-  // clearPlaylist() reset the index; re-resolve it by matching the currently
-  // playing stream URL against the new list (stays -1 if not found)
-  for (int i = 0; i < player.getPlaylistCount(); i++) {
-    if (strcmp(player.getPlaylistItem(i).url, player.getStreamUrl()) == 0) {
-      player.setPlaylistIndex(i);
-      break;
-    }
-  }
-  player.savePlaylist();
   // Refresh WebSocket clients and the OLED (it may show the selected name)
   updateDisplay();
   sendStatusToClients();
@@ -1511,11 +1474,9 @@ void handlePlayer() {
         return;
       }
       // Update currentSelection based on URL
-      for (int i = 0; i < player.getPlaylistCount(); i++) {
-        if (strcmp(player.getPlaylistItem(i).url, url.c_str()) == 0) {
-          player.setPlaylistIndex(i);
-          break;
-        }
+      int urlIndex = player.findPlaylistUrl(url.c_str());
+      if (urlIndex >= 0) {
+        player.setPlaylistIndex(urlIndex);
       }
     }
     // Handle case where we're resuming playback
@@ -2078,7 +2039,7 @@ bool initSPIFFS() {
  */
 void setupWebServer() {
   server.on("/api/streams", HTTP_GET, handleGetStreams);
-  server.on("/api/streams", HTTP_POST, handlePostStreams);
+  server.on("/api/streams", HTTP_POST, handlePostStreams, handlePostStreamsUpload);
   server.on("/api/player", HTTP_GET, handlePlayer);
   server.on("/api/player", HTTP_POST, handlePlayer);
   server.on("/api/mixer", HTTP_GET, handleMixer);
@@ -2440,8 +2401,6 @@ void setup() {
   setupRotaryEncoder();
   // Load playlist with error recovery
   player.loadPlaylist();
-  // Validate loaded playlist
-  player.getPlaylist()->validate();
   // Start audio task before loadPlayerState() so that connecttohost() called
   // during stream resume has audio->loop() running to drain the socket.
   BaseType_t result = xTaskCreatePinnedToCore(audioTask, "AudioTask", 8192, NULL, 5, &audioTaskHandle, 0);

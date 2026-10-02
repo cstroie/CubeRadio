@@ -20,6 +20,7 @@
 #define PLAYER_H
 
 #include <Arduino.h>
+#include <functional>
 
 // Buffer size constants
 #define PLAYER_STATE_BUFFER_SIZE 512   // JSON buffer for player state (512 bytes = 2^9)
@@ -146,17 +147,20 @@ public:
   void setStreamIconUrl(const char* iconUrl);
   void clearStreamInfo();
 
-  // Playlist getters
+  // Playlist getters (entries are read from SPIFFS on demand)
   const struct StreamInfo& getPlaylistItem(int index) const;
+  int findPlaylistUrl(const char* url) const;
+  void forEachPlaylistItem(const std::function<bool(int, const struct StreamInfo&)>& fn) const;
   Playlist* getPlaylist() const { return playlist; }
 
   // Playlist methods
   void loadPlaylist();
-  void savePlaylist();
-  void setPlaylistItem(int index, const char* name, const char* url);
-  bool addPlaylistItem(const char* name, const char* url);
-  void removePlaylistItem(int index);
-  void clearPlaylist();
+  // Streaming replacement of the whole playlist (JSONL body)
+  bool beginPlaylistUpload();
+  void writePlaylistUpload(const uint8_t* data, size_t len);
+  bool endPlaylistUpload();
+  void abortPlaylistUpload();
+  const char* getPlaylistUploadError() const;
 
   // Audio control methods
   void startStream(const char* url = nullptr, const char* name = nullptr);

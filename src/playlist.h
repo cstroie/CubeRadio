@@ -21,10 +21,19 @@
 
 #include "main.h"
 #include <Arduino.h>
+#include <FS.h>
+#include <functional>
 
 // Constants for StreamInfo field sizes
 #define STREAM_NAME_SIZE 96
 #define STREAM_URL_SIZE 256   // Must be >= StreamInfoData::url[256] so URLs are never silently truncated
+
+// Playlist storage: one JSON object per line ({"name":"...","url":"..."})
+#define PLAYLIST_FILE        "/playlist.jsonl"
+#define PLAYLIST_TMP_FILE    "/playlist.tmp"
+#define PLAYLIST_BAK_FILE    "/playlist.bak"
+#define PLAYLIST_LEGACY_FILE "/playlist.json"   // pre-JSONL format, migrated at boot
+#define PLAYLIST_LINE_MAX    1024               // Max bytes per JSONL line, including escapes
 
 // Helper macro for safe string copying with null termination
 #define SAFE_STRNCPY(dest, src, size) \
@@ -39,29 +48,63 @@ struct StreamInfo {
   char url[STREAM_URL_SIZE];
 };
 
+/**
+ * @brief Playlist kept on SPIFFS, not in RAM
+ * @details The playlist lives in PLAYLIST_FILE as JSON Lines. Only the file
+ * offset of each entry is kept in memory (4 bytes per entry), plus one cached
+ * entry. Entries are read on demand; the whole list is replaced by streaming
+ * an upload into a temporary file that is validated line by line and swapped
+ * in only when every line is valid.
+ */
 class Playlist {
 private:
-  StreamInfo playlist[MAX_PLAYLIST_SIZE];
-  int count;
+  uint32_t offsets[MAX_PLAYLIST_SIZE];  ///< File offset of each valid entry
+  int count;                            ///< Number of valid entries
+  mutable StreamInfo cache;             ///< Last entry read by getItem()
+  mutable int cacheIndex;               ///< Index held in cache, -1 if none
+
+  // Upload state; the line buffer is allocated only while an upload runs
+  File uploadFile;
+  char* uploadLine;
+  size_t uploadLineLen;
+  size_t uploadBytes;
+  int uploadCount;
+  int uploadLineNo;
+  bool uploadActive;
+  bool uploadOverflow;
+  bool uploadLenient;                   ///< Skip invalid lines instead of failing (migration)
+  char uploadError[80];
+
+  bool readItem(File& file, int index, StreamInfo& out) const;
+  void processUploadLine();
+  void failUpload(const char* message);
+  void releaseUpload();
+  bool migrateLegacy();
 
 public:
-  // Constructor
   Playlist();
 
-  // Playlist management methods
+  // Build the offset index from SPIFFS (migrates the legacy JSON file once)
   void load();
-  void save();
-  void setItem(int index, const char* name, const char* url);
-  bool addItem(const char* name, const char* url);
-  void removeItem(int index);
-  void clear();
 
   // Getters
   int getCount() const;
+  // Returned reference stays valid until the next getItem() for another index
   const StreamInfo& getItem(int index) const;
+  int findByUrl(const char* url) const;
+  // Visit entries in order with one open file; return false from fn to stop
+  void forEach(const std::function<bool(int, const StreamInfo&)>& fn) const;
 
-  // Utility methods
-  void validate();
+  // Streaming replacement of the whole playlist
+  bool beginUpload();
+  void writeUpload(const uint8_t* data, size_t len);
+  bool endUpload();
+  void abortUpload();
+  const char* getUploadError() const { return uploadError; }
+
+  // JSONL line helpers
+  static bool parseLine(const char* line, StreamInfo& out);
+  static size_t formatLine(const StreamInfo& item, char* buf, size_t size);
 };
 
 #endif // PLAYLIST_H

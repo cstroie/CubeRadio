@@ -676,6 +676,58 @@ async function setMixer(settings) {
 
 
 /**
+ * @brief Parse a JSON Lines playlist into an array of streams
+ * @param {string} text - One {"name","url"} object per line
+ * @returns {Array<Object>} Parsed stream objects (invalid lines are skipped)
+ */
+function parseJSONL(text) {
+  const items = [];
+  text.split("\n").forEach((line, i) => {
+    line = line.trim();
+    if (!line) {
+      return;
+    }
+    try {
+      const item = JSON.parse(line);
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        items.push(item);
+      } else {
+        console.warn(`Skipping playlist line ${i + 1}: not an object`);
+      }
+    } catch (e) {
+      console.warn(`Skipping invalid playlist line ${i + 1}`);
+    }
+  });
+  return items;
+}
+
+/**
+ * @brief Serialize streams as a JSON Lines playlist
+ * @param {Array<Object>} items - Stream objects with name and url
+ * @returns {string} JSONL text; an empty playlist is a single blank line,
+ * because the device rejects an empty request body
+ */
+function toJSONL(items) {
+  if (!items.length) {
+    return "\n";
+  }
+  return items.map((s) => JSON.stringify({ name: s.name, url: s.url })).join("\n") + "\n";
+}
+
+/**
+ * @brief Fetch the playlist from the device
+ * @returns {Promise<Array<Object>>} Stream objects; line N is playlist index N
+ */
+async function fetchStreams() {
+  const response = await fetch("/api/streams");
+  console.log("Loading streams from /api/streams ...", response.status);
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return parseJSONL(await response.text());
+}
+
+/**
  * @brief Load streams from the server
  * @description Fetches the playlist from the server and updates the UI
  * Shows loading states and handles errors appropriately
@@ -707,17 +759,7 @@ async function loadStreams() {
   }
   // Try to get the streams from API
   try {
-    const response = await fetch("/api/streams");
-    console.log("Loading streams from /api/streams ...", response.status);
-    if (!response.ok) {
-        throw new Error(`${response.statusText}`);
-    }
-    const data = await response.json();
-    // Validate that we received an array
-    if (!Array.isArray(data)) {
-      throw new Error("Invalid response format from server: expected array",);
-    }
-    streams = data;
+    streams = await fetchStreams();
     console.log("Loaded streams:", streams);
     // In homepage, populate the select element
     if (select) {
@@ -954,10 +996,10 @@ async function savePlaylistInternal() {
     saveButton.textContent = "Saving playlist...";
     saveButton.disabled = true;
   }
-  // Convert streams to JSON
+  // Convert streams to JSON Lines
   let jsonData;
   try {
-    jsonData = JSON.stringify(streams);
+    jsonData = toJSONL(streams);
   } catch (error) {
     console.error("Error serializing playlist:", error);
     showModal("Error serializing playlist", error);
@@ -974,7 +1016,7 @@ async function savePlaylistInternal() {
     const response = await fetch("/api/streams", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-ndjson",
         "X-Requested-With": "XMLHttpRequest",
       },
       body: jsonData,
@@ -2228,6 +2270,8 @@ async function uploadPlaylist() {
   let fileType;
   if (fileName.endsWith(".json")) {
     fileType = "json";
+  } else if (fileName.endsWith(".jsonl") || fileName.endsWith(".ndjson")) {
+    fileType = "jsonl";
   } else if (fileName.endsWith(".m3u") || fileName.endsWith(".m3u8")) {
     fileType = "m3u";
   } else if (fileName.endsWith(".pls")) {
@@ -2256,9 +2300,10 @@ async function uploadPlaylist() {
       let playlistData;
 
       // Process based on file type
-      if (fileType === "json") {
-        // Parse JSON content
-        const jsonData = JSON.parse(fileContent);
+      if (fileType === "json" || fileType === "jsonl") {
+        // Parse JSON array or JSON Lines content
+        const jsonData =
+          fileType === "jsonl" ? parseJSONL(fileContent) : JSON.parse(fileContent);
 
         // Validate the JSON structure
         if (!Array.isArray(jsonData)) {
@@ -2361,30 +2406,18 @@ async function downloadJSON() {
   }
 
   try {
-    const response = await fetch("/api/streams", {
-      headers: {
-        Accept: "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    });
-    console.log("Download JSON response status:", response.status);
-
-    if (response.ok) {
-      const jsonContent = await response.text();
-      const blob = new Blob([jsonContent], { type: "application/json" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        "CubeRadio-" + new Date().toISOString().split("T")[0] + ".json";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } else {
-      const error = await response.text();
-      console.error("Error downloading JSON:", error);
-    }
+    const jsonData = await fetchStreams();
+    const jsonContent = JSON.stringify(jsonData, null, 2);
+    const blob = new Blob([jsonContent], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      "CubeRadio-" + new Date().toISOString().split("T")[0] + ".json";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   } catch (error) {
     console.error("Error downloading JSON:", error);
   } finally {
@@ -2406,31 +2439,18 @@ async function downloadM3U() {
   }
 
   try {
-    const response = await fetch("/api/streams", {
-      headers: {
-        Accept: "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    });
-    console.log("Download JSON response status:", response.status);
-
-    if (response.ok) {
-      const jsonData = await response.json();
-      const m3uContent = convertJSONToM3U(jsonData);
-      const blob = new Blob([m3uContent], { type: "audio/x-mpegurl" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        "CubeRadio-" + new Date().toISOString().split("T")[0] + ".m3u";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } else {
-      const error = await response.text();
-      console.error("Error downloading JSON:", error);
-    }
+    const jsonData = await fetchStreams();
+    const m3uContent = convertJSONToM3U(jsonData);
+    const blob = new Blob([m3uContent], { type: "audio/x-mpegurl" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      "CubeRadio-" + new Date().toISOString().split("T")[0] + ".m3u";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   } catch (error) {
     console.error("Error downloading playlist:", error);
   } finally {
@@ -2452,31 +2472,18 @@ async function downloadPLS() {
   }
 
   try {
-    const response = await fetch("/api/streams", {
-      headers: {
-        Accept: "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    });
-    console.log("Download JSON response status:", response.status);
-
-    if (response.ok) {
-      const jsonData = await response.json();
-      const plsContent = convertJSONToPLS(jsonData);
-      const blob = new Blob([plsContent], { type: "audio/x-scpls" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        "CubeRadio-" + new Date().toISOString().split("T")[0] + ".pls";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } else {
-      const error = await response.text();
-      console.error("Error downloading JSON:", error);
-    }
+    const jsonData = await fetchStreams();
+    const plsContent = convertJSONToPLS(jsonData);
+    const blob = new Blob([plsContent], { type: "audio/x-scpls" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      "CubeRadio-" + new Date().toISOString().split("T")[0] + ".pls";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   } catch (error) {
     console.error("Error downloading playlist:", error);
   } finally {

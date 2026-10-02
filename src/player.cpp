@@ -270,72 +270,50 @@ void Player::savePlayerState() {
  * Delegates to the playlist object's load method
  */
 void Player::loadPlaylist() {
-  playlist->load();  // Load using predefined buffer size PLAYLIST_BUFFER_SIZE
+  playlist->load();
   playlistVersion++;
 }
 
 /**
- * @brief Save playlist to SPIFFS storage
- * Delegates to the playlist object's save method
+ * @brief Start replacing the playlist with an uploaded JSONL body
  */
-void Player::savePlaylist() {
-  playlist->save();  // Save using predefined buffer size PLAYLIST_BUFFER_SIZE
+bool Player::beginPlaylistUpload() {
+  return playlist->beginUpload();
 }
 
 /**
- * @brief Set playlist item at specific index
- * @param index Playlist index
- * @param name Stream name
- * @param url Stream URL
- * Delegates to the playlist object's setItem method
+ * @brief Feed a chunk of the uploaded JSONL body
  */
-void Player::setPlaylistItem(int index, const char* name, const char* url) {
-  playlist->setItem(index, name, url);
+void Player::writePlaylistUpload(const uint8_t* data, size_t len) {
+  playlist->writeUpload(data, len);
+}
+
+/**
+ * @brief Abort a playlist upload, keeping the current playlist
+ */
+void Player::abortPlaylistUpload() {
+  playlist->abortUpload();
+}
+
+/**
+ * @brief Get the reason of the last failed playlist upload
+ */
+const char* Player::getPlaylistUploadError() const {
+  return playlist->getUploadError();
+}
+
+/**
+ * @brief Finish a playlist upload and swap the new playlist in
+ * @details The selection is re-resolved by matching the current stream URL
+ * against the new list (stays -1 if not found), so a stale index is never
+ * persisted and resumed as the wrong station after a reboot.
+ * @return true if the playlist was replaced
+ */
+bool Player::endPlaylistUpload() {
+  if (!playlist->endUpload()) return false;
   playlistVersion++;
-}
-
-/**
- * @brief Add playlist item
- * @param name Stream name
- * @param url Stream URL
- * Delegates to the playlist object's addItem method
- */
-bool Player::addPlaylistItem(const char* name, const char* url) {
-  bool added = playlist->addItem(name, url);
-  if (added) playlistVersion++;
-  return added;
-}
-
-/**
- * @brief Remove playlist item at specific index
- * @param index Playlist index to remove
- * Delegates to the playlist object's removeItem method
- */
-void Player::removePlaylistItem(int index) {
-  playlist->removeItem(index);
-  playlistVersion++;
-  // Keep playlistIndex pointing at the same logical stream after removal.
-  // If the removed entry was before the current index, shift down by one.
-  // If it was the current entry (or the list is now empty), clamp to 0.
-  if (playlist->getCount() == 0) {
-    playerState.playlistIndex = -1;
-  } else if (index < playerState.playlistIndex) {
-    playerState.playlistIndex--;
-  } else if (playerState.playlistIndex >= playlist->getCount()) {
-    playerState.playlistIndex = playlist->getCount() - 1;
-  }
-}
-
-/**
- * @brief Clear all playlist items
- * Delegates to the playlist object's clear method
- */
-void Player::clearPlaylist() {
-  playlist->clear();
-  playlistVersion++;
-  // No items left — a stale index would be persisted and clamped to 0 on
-  // reboot, resuming the wrong station after the playlist is replaced
-  playerState.playlistIndex = -1;
+  playerState.playlistIndex = playlist->findByUrl(streamInfo.url);
+  return true;
 }
 
 /**
@@ -418,6 +396,22 @@ const char* Player::getCurrentPlaylistItemURL() const {
  */
 const StreamInfo& Player::getPlaylistItem(int index) const {
   return playlist->getItem(index);
+}
+
+/**
+ * @brief Find the playlist index of a stream URL
+ * @return Index of the first matching entry, or -1
+ */
+int Player::findPlaylistUrl(const char* url) const {
+  return playlist->findByUrl(url);
+}
+
+/**
+ * @brief Visit playlist entries in order (single file pass)
+ * @param fn Called with (index, entry); return false to stop early
+ */
+void Player::forEachPlaylistItem(const std::function<bool(int, const StreamInfo&)>& fn) const {
+  playlist->forEach(fn);
 }
 
 /**

@@ -20,215 +20,402 @@
 #include "main.h"
 #include <ArduinoJson.h>
 
-extern bool readJsonFile(const char* filename, size_t maxFileSize, JsonDocument& doc);
-extern bool writeJsonFile(const char* filename, JsonDocument& doc);
-
 /**
- * @brief Playlist constructor
+ * @brief Copy a stream name, truncating on a UTF-8 character boundary
+ * @details Control characters (CR, LF, TAB, ...) are replaced with spaces so a
+ * name always renders on a single line (OLED, MPD, HTML).
  */
-Playlist::Playlist() {
-  count = 0;
-  for (int i = 0; i < MAX_PLAYLIST_SIZE; i++) {
-    playlist[i].name[0] = '\0';
-    playlist[i].url[0] = '\0';
-  }
-}
-
-/**
- * @brief Load playlist from SPIFFS storage
- * Reads playlist.json from SPIFFS and populates the playlist array
- * This function loads the playlist from SPIFFS with error recovery mechanisms.
- * If the playlist file is corrupted, it creates a backup and a new empty playlist.
- */
-void Playlist::load() {
-  count = 0;
-  JsonDocument doc;
-  if (!readJsonFile("/playlist.json", PLAYLIST_BUFFER_SIZE, doc)) {
-    Serial.println("Failed to load playlist, continuing with empty playlist");
-    return;
-  }
-  if (!doc.is<JsonArray>()) {
-    Serial.println("Error: Playlist JSON is not an array, continuing with empty playlist");
-    return;
-  }
-  JsonArray array = doc.as<JsonArray>();
-  for (JsonObject item : array) {
-    if (count >= MAX_PLAYLIST_SIZE) {
-      Serial.println("Warning: Playlist limit reached (20 entries)");
-      break;
-    }
-    if (!item["name"].isNull() && !item["url"].isNull()) {
-      const char* name = item["name"];
-      const char* url  = item["url"];
-      if (name && url && strlen(name) > 0 && strlen(url) > 0) {
-        if (VALIDATE_URL(url)) {
-          SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);
-          SAFE_STRNCPY(playlist[count].url,  url,  STREAM_URL_SIZE);
-          count++;
-        } else {
-          Serial.println("Warning: Skipping stream with invalid URL format");
-        }
-      } else {
-        Serial.println("Warning: Skipping stream with empty name or URL");
-      }
+static void copyName(char* dest, const char* src, size_t size) {
+  size_t n = strlen(src);
+  if (n >= size) {
+    n = size - 1;
+    // Back off to the lead byte of a multi-byte character cut by the limit
+    while (n > 0 && (static_cast<uint8_t>(src[n]) & 0xC0) == 0x80) {
+      n--;
     }
   }
-  if (count == 0) {
-    Serial.println("No valid streams found in playlist");
-  } else {
-    Serial.printf("Loaded %d streams from playlist\n", count);
+  for (size_t i = 0; i < n; i++) {
+    dest[i] = (static_cast<uint8_t>(src[i]) < 0x20) ? ' ' : src[i];
   }
-  validate();
+  dest[n] = '\0';
 }
 
 /**
- * @brief Save playlist to SPIFFS storage
- * Serializes the current playlist array to playlist.json
- * This function saves the current playlist to SPIFFS with backup functionality.
- * It creates a backup before saving and restores from backup if saving fails.
+ * @brief Read one line from a file into a buffer
+ * @param overflow Set when the line was longer than the buffer (the rest of
+ *                 the line is consumed and discarded)
+ * @return Line length without the line terminator
  */
-void Playlist::save() {
-  // Always allocate the maximum allowed buffer; dynamic under-estimation caused
-  // silent truncation when entries were near their size limits.
-  JsonDocument doc;
-  JsonArray array = doc.to<JsonArray>();
-  // Add playlist entries
-  for (int i = 0; i < count; i++) {
-    // Validate URL format before saving
-    if (strlen(playlist[i].url) == 0 ||
-        !VALIDATE_URL(playlist[i].url)) {
-      Serial.println("Warning: Skipping stream with invalid URL format during save");
-      continue;
+static size_t readLine(File& file, char* buf, size_t size, bool& overflow) {
+  size_t len = 0;
+  overflow = false;
+  int c;
+  while ((c = file.read()) >= 0) {
+    if (c == '\n') break;
+    if (len < size - 1) {
+      buf[len++] = static_cast<char>(c);
+    } else {
+      overflow = true;
     }
-    // Create JSON object for the playlist entry
-    JsonObject item = array.add<JsonObject>();
-    item["name"] = playlist[i].name;
-    item["url"] = playlist[i].url;
   }
-  // Save the JSON document to SPIFFS using helper function
-  if (writeJsonFile("/playlist.json", doc)) {
-    Serial.println("Saved playlist to SPIFFS");
-  } else {
-    Serial.println("Failed to save playlist to SPIFFS");
-  }
+  if (len > 0 && buf[len - 1] == '\r') len--;
+  buf[len] = '\0';
+  return len;
 }
 
 /**
- * @brief Set playlist item at specific index
- * @param index Playlist index
- * @param name Stream name
- * @param url Stream URL
+ * @brief Check whether a line holds only whitespace
  */
-void Playlist::setItem(int index, const char* name, const char* url) {
-  // Only allow indices within the already-populated range or the next append slot.
-  // Allowing index > count would create uninitialised sparse slots.
-  if (index < 0 || index > count || index >= MAX_PLAYLIST_SIZE || !name || !url) return;
-  if (strlen(url) == 0 || !VALIDATE_URL(url)) {
-    Serial.println("Warning: Skipping stream with invalid URL format in setItem");
-    return;
+static bool isBlank(const char* line) {
+  for (const char* p = line; *p; p++) {
+    if (!isspace(static_cast<uint8_t>(*p))) return false;
   }
-  // A truncated URL would still look valid but never connect
-  if (strlen(url) >= STREAM_URL_SIZE) {
-    Serial.println("Warning: Skipping stream with too long URL in setItem");
-    return;
-  }
-  SAFE_STRNCPY(playlist[index].name, name, STREAM_NAME_SIZE);
-  SAFE_STRNCPY(playlist[index].url,  url,  STREAM_URL_SIZE);
-  if (index == count) {
-    count++;
-  }
-}
-
-/**
- * @brief Add playlist item
- * @param name Stream name
- * @param url Stream URL
- */
-bool Playlist::addItem(const char* name, const char* url) {
-  if (count >= MAX_PLAYLIST_SIZE) {
-    Serial.println("Warning: Playlist full, cannot add item");
-    return false;
-  }
-  if (!name || !url || strlen(url) == 0 || !VALIDATE_URL(url)) {
-    Serial.println("Warning: Skipping stream with invalid URL format in addItem");
-    return false;
-  }
-  // A truncated URL would still look valid but never connect
-  if (strlen(url) >= STREAM_URL_SIZE) {
-    Serial.println("Warning: Skipping stream with too long URL in addItem");
-    return false;
-  }
-  SAFE_STRNCPY(playlist[count].name, name, STREAM_NAME_SIZE);
-  SAFE_STRNCPY(playlist[count].url,  url,  STREAM_URL_SIZE);
-  count++;
   return true;
 }
 
 /**
- * @brief Remove playlist item at specific index
- * @param index Playlist index to remove
+ * @brief Playlist constructor
  */
-void Playlist::removeItem(int index) {
-  if (index >= 0 && index < count) {
-    // Shift all items after the removed item
-    for (int i = index; i < count - 1; i++) {
-      SAFE_STRNCPY(playlist[i].name, playlist[i + 1].name, STREAM_NAME_SIZE);
-      SAFE_STRNCPY(playlist[i].url, playlist[i + 1].url, STREAM_URL_SIZE);
-    }
-    // Clear the last item
-    playlist[count - 1].name[0] = '\0';
-    playlist[count - 1].url[0] = '\0';
-    count--;
-  }
+Playlist::Playlist()
+  : count(0), cacheIndex(-1), uploadLine(nullptr), uploadLineLen(0),
+    uploadBytes(0), uploadCount(0), uploadLineNo(0), uploadActive(false),
+    uploadOverflow(false), uploadLenient(false) {
+  cache.name[0] = '\0';
+  cache.url[0] = '\0';
+  uploadError[0] = '\0';
 }
 
 /**
- * @brief Clear all playlist items
+ * @brief Parse and validate one JSONL playlist line
+ * @param line Null-terminated line, e.g. {"name":"Radio","url":"http://..."}
+ * @param out Receives the entry when valid
+ * @return true if the line is a valid playlist entry
  */
-void Playlist::clear() {
-  for (int i = 0; i < count; i++) {
-    playlist[i].name[0] = '\0';
-    playlist[i].url[0] = '\0';
+bool Playlist::parseLine(const char* line, StreamInfo& out) {
+  JsonDocument doc;
+  if (deserializeJson(doc, line)) return false;
+  JsonObjectConst obj = doc.as<JsonObjectConst>();
+  if (obj.isNull()) return false;
+  const char* name = obj["name"] | "";
+  const char* url  = obj["url"]  | "";
+  if (name[0] == '\0' || !VALIDATE_URL(url)) return false;
+  // A truncated URL would still look valid but never connect
+  if (strlen(url) >= STREAM_URL_SIZE) return false;
+  // URLs never contain whitespace or control characters
+  for (const char* p = url; *p; p++) {
+    if (static_cast<uint8_t>(*p) <= 0x20) return false;
   }
+  copyName(out.name, name, STREAM_NAME_SIZE);
+  SAFE_STRNCPY(out.url, url, STREAM_URL_SIZE);
+  return true;
+}
+
+/**
+ * @brief Serialize an entry as one JSONL line (without the newline)
+ * @return Line length, or 0 if it does not fit in the buffer
+ */
+size_t Playlist::formatLine(const StreamInfo& item, char* buf, size_t size) {
+  JsonDocument doc;
+  doc["name"] = item.name;
+  doc["url"]  = item.url;
+  if (measureJson(doc) + 1 > size) return 0;
+  return serializeJson(doc, buf, size);
+}
+
+/**
+ * @brief Read the entry at an index from an open playlist file
+ */
+bool Playlist::readItem(File& file, int index, StreamInfo& out) const {
+  if (index < 0 || index >= count) return false;
+  if (!file.seek(offsets[index])) return false;
+  char line[PLAYLIST_LINE_MAX];
+  bool overflow;
+  readLine(file, line, sizeof(line), overflow);
+  return !overflow && parseLine(line, out);
+}
+
+/**
+ * @brief Build the in-memory offset index from SPIFFS
+ * @details Migrates the legacy JSON playlist once, recovers from a power loss
+ * during a playlist swap, and skips (but keeps) invalid lines.
+ */
+void Playlist::load() {
   count = 0;
+  cacheIndex = -1;
+  // A power loss between the two renames of a swap leaves only the backup
+  if (!SPIFFS.exists(PLAYLIST_FILE) && SPIFFS.exists(PLAYLIST_BAK_FILE)) {
+    Serial.println("Restoring playlist from backup");
+    SPIFFS.rename(PLAYLIST_BAK_FILE, PLAYLIST_FILE);
+  }
+  // Convert the pre-JSONL playlist; a successful migration reloads the index
+  if (!SPIFFS.exists(PLAYLIST_FILE) && SPIFFS.exists(PLAYLIST_LEGACY_FILE)) {
+    if (migrateLegacy()) return;
+  }
+  File file = SPIFFS.open(PLAYLIST_FILE, "r");
+  if (!file) {
+    Serial.println("No playlist found, continuing with empty playlist");
+    return;
+  }
+  char line[PLAYLIST_LINE_MAX];
+  StreamInfo item;
+  int lineNo = 0;
+  while (file.available()) {
+    uint32_t pos = file.position();
+    bool overflow;
+    readLine(file, line, sizeof(line), overflow);
+    lineNo++;
+    if (!overflow && isBlank(line)) continue;
+    if (overflow || !parseLine(line, item)) {
+      Serial.printf("Warning: Skipping invalid playlist line %d\n", lineNo);
+      continue;
+    }
+    if (count >= MAX_PLAYLIST_SIZE) {
+      Serial.printf("Warning: Playlist limit reached (%d entries)\n", MAX_PLAYLIST_SIZE);
+      break;
+    }
+    offsets[count++] = pos;
+  }
+  file.close();
+  Serial.printf("Loaded %d streams from playlist\n", count);
+}
+
+/**
+ * @brief Convert the legacy /playlist.json array into JSONL
+ * @return true if the JSONL playlist was written and loaded
+ */
+bool Playlist::migrateLegacy() {
+  Serial.println("Migrating playlist.json to playlist.jsonl");
+  JsonDocument doc;
+  if (!readJsonFile(PLAYLIST_LEGACY_FILE, 8192, doc) || !doc.is<JsonArray>()) {
+    Serial.println("Legacy playlist unreadable, not migrated");
+    return false;
+  }
+  if (!beginUpload()) return false;
+  // Invalid legacy entries are dropped, as the old loader did
+  uploadLenient = true;
+  // Start with a blank line so an empty legacy array still migrates
+  writeUpload(reinterpret_cast<const uint8_t*>("\n"), 1);
+  char line[PLAYLIST_LINE_MAX];
+  for (JsonVariantConst item : doc.as<JsonArrayConst>()) {
+    size_t len = serializeJson(item, line, sizeof(line) - 1);
+    if (len == 0 || len >= sizeof(line) - 1) continue;
+    line[len++] = '\n';
+    writeUpload(reinterpret_cast<const uint8_t*>(line), len);
+  }
+  if (!endUpload()) {
+    Serial.printf("Playlist migration failed: %s\n", uploadError);
+    return false;
+  }
+  SPIFFS.remove(PLAYLIST_LEGACY_FILE);
+  SPIFFS.remove(String(PLAYLIST_LEGACY_FILE) + ".bak");
+  return true;
 }
 
 /**
  * @brief Get the number of items in the playlist
- * @return Number of items in the playlist
  */
 int Playlist::getCount() const {
   return count;
 }
 
 /**
- * @brief Get the current playlist index
- * @return Current selected playlist index
- */
-/**
  * @brief Get playlist item at specific index
  * @param index Playlist index (0-based)
- * @return Reference to StreamInfo at the specified index, or empty item if out of bounds
+ * @return Reference to a cached copy of the entry, or an empty item if out of
+ * bounds. It is overwritten by the next getItem() call for another index.
  */
 const StreamInfo& Playlist::getItem(int index) const {
-  if (index < 0 || index >= count) {
-    static StreamInfo empty = {"", ""};
-    return empty;
+  static const StreamInfo empty = {"", ""};
+  if (index < 0 || index >= count) return empty;
+  if (index == cacheIndex) return cache;
+  File file = SPIFFS.open(PLAYLIST_FILE, "r");
+  bool ok = file && readItem(file, index, cache);
+  if (file) file.close();
+  if (!ok) {
+    cache.name[0] = '\0';
+    cache.url[0] = '\0';
   }
-  return playlist[index];
+  cacheIndex = index;
+  return cache;
 }
 
 /**
- * @brief Set the current playlist index
- * @param index New current index (0-based)
+ * @brief Visit all entries in order using a single open file
+ * @param fn Called with (index, entry); return false to stop early
  */
-/**
- * @brief Validate playlist integrity
- * Ensures playlist count and selection are within valid ranges
- */
-void Playlist::validate() {
-  if (count < 0 || count > MAX_PLAYLIST_SIZE) {
-    Serial.println("Warning: Invalid playlist count detected, resetting to 0");
-    count = 0;
+void Playlist::forEach(const std::function<bool(int, const StreamInfo&)>& fn) const {
+  if (count == 0) return;
+  File file = SPIFFS.open(PLAYLIST_FILE, "r");
+  if (!file) return;
+  StreamInfo item;
+  for (int i = 0; i < count; i++) {
+    if (!readItem(file, i, item)) continue;
+    if (!fn(i, item)) break;
   }
+  file.close();
+}
+
+/**
+ * @brief Find the first entry with the given URL
+ * @return Index of the entry, or -1 if not found
+ */
+int Playlist::findByUrl(const char* url) const {
+  int found = -1;
+  if (!url || url[0] == '\0') return found;
+  forEach([&](int i, const StreamInfo& item) {
+    if (strcmp(item.url, url) == 0) {
+      found = i;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+/**
+ * @brief Start replacing the playlist with streamed JSONL data
+ * @return true if the temporary file could be created
+ */
+bool Playlist::beginUpload() {
+  releaseUpload();
+  uploadError[0] = '\0';
+  uploadLineLen = 0;
+  uploadBytes = 0;
+  uploadCount = 0;
+  uploadLineNo = 0;
+  uploadOverflow = false;
+  uploadLenient = false;
+  uploadLine = static_cast<char*>(malloc(PLAYLIST_LINE_MAX));
+  if (!uploadLine) {
+    failUpload("Out of memory");
+    return false;
+  }
+  uploadFile = SPIFFS.open(PLAYLIST_TMP_FILE, "w");
+  if (!uploadFile) {
+    failUpload("Cannot create temporary playlist file");
+    return false;
+  }
+  uploadActive = true;
+  return true;
+}
+
+/**
+ * @brief Feed a chunk of the uploaded JSONL body
+ */
+void Playlist::writeUpload(const uint8_t* data, size_t len) {
+  if (!uploadActive) return;
+  uploadBytes += len;
+  for (size_t i = 0; i < len && uploadActive; i++) {
+    char c = static_cast<char>(data[i]);
+    if (c == '\n') {
+      processUploadLine();
+    } else if (uploadLineLen < PLAYLIST_LINE_MAX - 1) {
+      uploadLine[uploadLineLen++] = c;
+    } else {
+      uploadOverflow = true;
+    }
+  }
+}
+
+/**
+ * @brief Validate one complete uploaded line and append it to the temp file
+ */
+void Playlist::processUploadLine() {
+  uploadLine[uploadLineLen] = '\0';
+  uploadLineLen = 0;
+  uploadLineNo++;
+  bool overflow = uploadOverflow;
+  uploadOverflow = false;
+  if (!overflow && isBlank(uploadLine)) return;
+  StreamInfo item;
+  if (overflow || !parseLine(uploadLine, item)) {
+    if (uploadLenient) return;
+    char msg[sizeof(uploadError)];
+    snprintf(msg, sizeof(msg), "Invalid playlist entry at line %d", uploadLineNo);
+    failUpload(msg);
+    return;
+  }
+  if (uploadCount >= MAX_PLAYLIST_SIZE) {
+    char msg[sizeof(uploadError)];
+    snprintf(msg, sizeof(msg), "Playlist exceeds maximum size (%d entries)", MAX_PLAYLIST_SIZE);
+    failUpload(msg);
+    return;
+  }
+  // Store a normalized line (the parsed entry is a copy, so reuse the buffer)
+  size_t len = formatLine(item, uploadLine, PLAYLIST_LINE_MAX);
+  if (len == 0 ||
+      uploadFile.write(reinterpret_cast<const uint8_t*>(uploadLine), len) != len ||
+      uploadFile.write('\n') != 1) {
+    failUpload("Failed to write playlist (filesystem full?)");
+    return;
+  }
+  uploadCount++;
+}
+
+/**
+ * @brief Abort the upload, keeping the current playlist
+ */
+void Playlist::failUpload(const char* message) {
+  SAFE_STRNCPY(uploadError, message, sizeof(uploadError));
+  Serial.printf("Playlist upload failed: %s\n", uploadError);
+  releaseUpload();
+}
+
+/**
+ * @brief Free upload resources and delete the temporary file
+ */
+void Playlist::releaseUpload() {
+  uploadActive = false;
+  if (uploadFile) uploadFile.close();
+  if (uploadLine) {
+    free(uploadLine);
+    uploadLine = nullptr;
+  }
+  if (SPIFFS.exists(PLAYLIST_TMP_FILE)) SPIFFS.remove(PLAYLIST_TMP_FILE);
+}
+
+/**
+ * @brief Abort an upload (client disconnected)
+ */
+void Playlist::abortUpload() {
+  if (uploadActive) failUpload("Upload aborted");
+}
+
+/**
+ * @brief Finish the upload and swap the new playlist in
+ * @return true if the new playlist replaced the old one
+ */
+bool Playlist::endUpload() {
+  if (!uploadActive) {
+    if (uploadError[0] == '\0') {
+      SAFE_STRNCPY(uploadError, "No playlist data received", sizeof(uploadError));
+    }
+    return false;
+  }
+  if (uploadBytes == 0) {
+    failUpload("Missing playlist data");
+    return false;
+  }
+  // The last line may lack a trailing newline
+  if (uploadLineLen > 0 || uploadOverflow) processUploadLine();
+  if (!uploadActive) return false;
+  uploadFile.close();
+  free(uploadLine);
+  uploadLine = nullptr;
+  uploadActive = false;
+  // Swap: current -> backup, temp -> current, then drop the backup
+  SPIFFS.remove(PLAYLIST_BAK_FILE);
+  if (SPIFFS.exists(PLAYLIST_FILE) && !SPIFFS.rename(PLAYLIST_FILE, PLAYLIST_BAK_FILE)) {
+    failUpload("Cannot back up current playlist");
+    return false;
+  }
+  if (!SPIFFS.rename(PLAYLIST_TMP_FILE, PLAYLIST_FILE)) {
+    SPIFFS.rename(PLAYLIST_BAK_FILE, PLAYLIST_FILE);
+    failUpload("Cannot replace playlist");
+    return false;
+  }
+  SPIFFS.remove(PLAYLIST_BAK_FILE);
+  Serial.printf("Saved playlist with %d streams\n", uploadCount);
+  load();
+  return true;
 }

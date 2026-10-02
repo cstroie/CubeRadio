@@ -302,9 +302,10 @@ void MPDInterface::handleListCommand(const String& args) {
       mpdClient.print("Album: WebRadio\n");
     } else if (tagType.startsWith("title")) {
       // Return the playlist
-      for (int i = 0; i < this->player.getPlaylistCount(); i++) {
-        mpdClient.print("Title: " + String(this->player.getPlaylistItem(i).name) + "\n");
-      }
+      this->player.forEachPlaylistItem([&](int, const StreamInfo& item) {
+        mpdClient.print("Title: " + String(item.name) + "\n");
+        return true;
+      });
     }
   } else {
     mpdClient.print(mpdResponseError("list", "Missing tag type"));
@@ -2070,8 +2071,7 @@ String MPDInterface::mpdResponseError(const String& command, const String& messa
  * 3=artist/album (file+title+artist+album+id+pos+lastmod)
  */
 void MPDInterface::sendPlaylistInfo(int detailLevel) {
-  for (int i = 0; i < min(this->player.getPlaylistCount(), MAX_PLAYLIST_SIZE); i++) {
-    const StreamInfo& item = this->player.getPlaylistItem(i);
+  this->player.forEachPlaylistItem([&](int i, const StreamInfo& item) {
     mpdClient.print("file: " + String(item.url) + "\n");
     mpdClient.print("Title: " + String(item.name) + "\n");
     if (detailLevel >= 3) {
@@ -2089,7 +2089,8 @@ void MPDInterface::sendPlaylistInfo(int detailLevel) {
       mpdClient.print("Track: " + String(i + 1) + "\n");
       mpdClient.print("Last-Modified: " + String(BUILD_TIME) + "\n");
     }
-  }
+    return true;
+  });
 }
 
 /**
@@ -2183,18 +2184,17 @@ void MPDInterface::handleMPDSearchCommand(const String& args, bool exactMatch) {
     return;
   }
   // Search in playlist names
-  for (int i = 0; i < this->player.getPlaylistCount(); i++) {
-    const StreamInfo& item = this->player.getPlaylistItem(i);
+  String lowerSearch = searchTerm;
+  lowerSearch.toLowerCase();
+  this->player.forEachPlaylistItem([&](int i, const StreamInfo& item) {
     String playlistName = String(item.name);
     // Validate playlist name
     if (playlistName.length() == 0) {
-      continue;
+      return true;
     }
-    // Convert both to lowercase for case-insensitive comparison
+    // Convert to lowercase for case-insensitive comparison
     String lowerName = playlistName;
     lowerName.toLowerCase();
-    String lowerSearch = searchTerm;
-    lowerSearch.toLowerCase();
     // Determine if there's a match based on mode
     bool match = false;
     if (exactMatch) {
@@ -2212,7 +2212,8 @@ void MPDInterface::handleMPDSearchCommand(const String& args, bool exactMatch) {
       mpdClient.print("Last-Modified: " + String(BUILD_TIME) + "\n");
     }
     yield(); // Allow other tasks to run
-  }
+    return true;
+  });
 }
 
 /**
