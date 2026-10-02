@@ -380,6 +380,83 @@ void sendJsonResponse(const String& status, const String& message, int code = -1
 }
 
 
+// Request bodies are spooled here instead of being held in RAM
+#define BODY_TMP_FILE "/body.tmp"
+static File spoolFile;
+static size_t spoolBytes = 0;
+static size_t spoolLimit = 0;
+static bool spoolOverflow = false;
+
+/**
+ * @brief Raw upload callback that spools a request body to SPIFFS
+ * @details Without it WebServer holds the body twice (its read buffer and the
+ * "plain" String) before it is parsed. The body is written to BODY_TMP_FILE
+ * and parsed from there by parseSpooledBody().
+ * @param maxSize Larger bodies are discarded and rejected with 413
+ */
+void spoolRequestBody(size_t maxSize) {
+  // Multipart form uploads reach this callback too, but without a raw buffer
+  String contentType = server.header("Content-Type");
+  contentType.toLowerCase();
+  if (contentType.startsWith("multipart/")) return;
+  HTTPRaw& raw = server.raw();
+  switch (raw.status) {
+    case RAW_START:
+      if (spoolFile) spoolFile.close();
+      spoolBytes = 0;
+      spoolLimit = maxSize;
+      spoolOverflow = false;
+      spoolFile = SPIFFS.open(BODY_TMP_FILE, "w");
+      break;
+    case RAW_WRITE:
+      spoolBytes += raw.currentSize;
+      if (spoolBytes > spoolLimit) {
+        spoolOverflow = true;
+      } else if (spoolFile) {
+        spoolFile.write(raw.buf, raw.currentSize);
+      }
+      break;
+    case RAW_END:
+      if (spoolFile) spoolFile.close();
+      break;
+    case RAW_ABORTED:
+      if (spoolFile) spoolFile.close();
+      SPIFFS.remove(BODY_TMP_FILE);
+      spoolBytes = 0;
+      break;
+  }
+}
+
+/**
+ * @brief Parse the spooled request body
+ * @details Sends the error response itself when the body is missing, too
+ * large or not valid JSON. The spool file is always removed.
+ * @param doc Receives the parsed body
+ * @return true if doc holds the parsed body
+ */
+bool parseSpooledBody(JsonDocument& doc) {
+  bool ok = false;
+  if (spoolOverflow) {
+    sendJsonResponse("error", "Request body too large", 413);
+  } else if (spoolBytes == 0 || !SPIFFS.exists(BODY_TMP_FILE)) {
+    sendJsonResponse("error", "Missing JSON data");
+  } else {
+    File file = SPIFFS.open(BODY_TMP_FILE, "r");
+    DeserializationError error = file ? deserializeJson(doc, file)
+                                      : DeserializationError(DeserializationError::InvalidInput);
+    if (file) file.close();
+    if (error) {
+      sendJsonResponse("error", "Invalid JSON");
+    } else {
+      ok = true;
+    }
+  }
+  if (SPIFFS.exists(BODY_TMP_FILE)) SPIFFS.remove(BODY_TMP_FILE);
+  spoolBytes = 0;
+  spoolOverflow = false;
+  return ok;
+}
+
 /**
  * @brief Handle WiFi configuration API request
  * Returns the current WiFi configuration as JSON
@@ -453,24 +530,9 @@ void handleWiFiScan() {
  * It supports both single network and multiple network configurations
  */
 void handleWiFiSave() {
-  if (!server.hasArg("plain")) {
-    sendJsonResponse("error", "Missing JSON data");
-    return;
-  }
-  // Parse JSON data
-  String json = server.arg("plain");
+  // Body was spooled to SPIFFS (max 2 KB) by spoolRequestBody()
   JsonDocument doc;
-  // Reject oversized bodies (JsonDocument grows unbounded)
-  if (json.length() > 2048) {
-    sendJsonResponse("error", "Request body too large", 413);
-    return;
-  }
-  DeserializationError error = deserializeJson(doc, json);
-  // Check for errors
-  if (error) {
-    sendJsonResponse("error", "Invalid JSON");
-    return;
-  }
+  if (!parseSpooledBody(doc)) return;
   // A non-array body would skip the parse loop below and commit an empty
   // list, silently erasing every saved network
   if (!doc.is<JsonArray>()) {
@@ -1664,37 +1726,10 @@ void handleMixer() {
  * "playlist.json" key is ignored; the web UI sends it to /api/streams.
  */
 void handleImportConfig() {
-  // Check if request method is POST
-  if (server.method() != HTTP_POST) {
-    sendJsonResponse("error", "Method not allowed", 405);
-    return;
-  }
-  // Check if we have data in the request body
-  if (!server.hasArg("plain")) {
-    sendJsonResponse("error", "No data received");
-    return;
-  }
-  // Get the JSON data from the request body
-  String jsonData = server.arg("plain");
-  // Check if data is empty
-  if (jsonData.length() == 0) {
-    sendJsonResponse("error", "No file uploaded");
-    return;
-  }
-  // Parse the JSON data
+  // Body was spooled to SPIFFS (max 4 KB) by spoolRequestBody(); config.json,
+  // wifi.json and player.json together stay well below that
   JsonDocument doc;
-  // Reject oversized bodies (JsonDocument grows unbounded); config.json,
-  // wifi.json and player.json together stay well below 4 KB
-  if (jsonData.length() > 4096) {
-    sendJsonResponse("error", "Request body too large", 413);
-    return;
-  }
-  DeserializationError error = deserializeJson(doc, jsonData);
-  if (error) {
-    Serial.printf("Failed to parse uploaded JSON: %s\n", error.c_str());
-    sendJsonResponse("error", "Invalid JSON format");
-    return;
-  }
+  if (!parseSpooledBody(doc)) return;
   // The playlist is not part of the bundle: the web UI uploads it separately
   // through POST /api/streams, which streams it to SPIFFS
   const char* configFiles[] = {"config.json", "wifi.json", "player.json"};
@@ -2078,7 +2113,7 @@ bool initSPIFFS() {
  * Configures all HTTP routes and static file mappings for the web server
  */
 void setupWebServer() {
-  // handlePostStreamsUpload() needs the request Content-Type
+  // The raw upload callbacks need the request Content-Type
   const char* requestHeaders[] = {"Content-Type"};
   server.collectHeaders(requestHeaders, 1);
   server.on("/api/streams", HTTP_GET, handleGetStreams);
@@ -2091,9 +2126,9 @@ void setupWebServer() {
   server.on("/api/config", HTTP_POST, handlePostConfig);
   // /api/config/export deliberately removed: it returned wifi.json with
   // cleartext passwords to any unauthenticated caller
-  server.on("/api/config/import", HTTP_POST, handleImportConfig);
+  server.on("/api/config/import", HTTP_POST, handleImportConfig, []() { spoolRequestBody(4096); });
   server.on("/api/wifi/scan", HTTP_GET, handleWiFiScan);
-  server.on("/api/wifi/save", HTTP_POST, handleWiFiSave);
+  server.on("/api/wifi/save", HTTP_POST, handleWiFiSave, []() { spoolRequestBody(2048); });
   server.on("/api/wifi/status", HTTP_GET, handleWiFiStatus);
   server.on("/api/wifi/config", HTTP_GET, handleWiFiConfig);
   server.on("/api/proxy", HTTP_GET, handleProxyRequest);
