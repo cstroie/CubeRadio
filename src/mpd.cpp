@@ -1328,7 +1328,7 @@ void MPDInterface::handlePlayCommand(const String& args) {
  * unauthenticated client on the LAN/AP reboot the device at will (trivial
  * DoS), and a networked radio appliance has no legitimate need for it. The
  * command is accepted and ACKed for protocol compatibility but no longer
- * reboots; reset is available physically or via OTA.
+ * reboots; reset is available physically.
  *
  * @param args Command arguments (not used for kill command)
  */

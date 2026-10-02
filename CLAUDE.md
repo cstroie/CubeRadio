@@ -94,7 +94,7 @@ data/             SPIFFS filesystem (upload with `pio run -t uploadfs`)
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  MAIN LOOP (core 1, 150ms tick)         │
-│ OTA · HTTP server · WebSocket · MPD · controls · display│
+│ HTTP server · WebSocket · MPD · controls · display      │
 └───────────┬──────────────┬──────────────────────────────┘
             │              │
    ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐
@@ -183,7 +183,7 @@ Array of up to 20 `{name[96], url[128]}` entries, serialized as `/playlist.json`
 | `/player.json` | Playback state | 512 B |
 | `/player.html` etc. | Web UI assets | varies |
 
-Writes use a backup/rollback pattern: existing file copied to `.bak`, new file written, `.bak` removed on success. SPIFFS is unmounted during OTA updates.
+Writes use a backup/rollback pattern: existing file copied to `.bak`, new file written, `.bak` removed on success.
 
 ---
 
@@ -250,7 +250,6 @@ Shared `PlayerState` protected by `portMUX_TYPE spinlock`. Audio callbacks run o
 | `links2004/WebSockets` | ^2.3.6 | WebSocket server |
 | `ESPmDNS` | built-in | mDNS (`CubeRadio.local`) |
 | `WebServer` | built-in | HTTP server |
-| `ArduinoOTA` | built-in | OTA firmware updates |
 | `SPIFFS` | built-in | Flash filesystem |
 
 ---

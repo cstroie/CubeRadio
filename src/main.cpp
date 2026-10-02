@@ -2208,7 +2208,6 @@ void loop() {
     sendStatusToClients();
   }
 
-  ArduinoOTA.handle();           // Handle OTA updates
   server.handleClient();         // Process incoming web requests
   webSocket.loop();              // Process WebSocket events
   mpdInterface.handleClient();   // Process MPD commands
@@ -2439,56 +2438,6 @@ void setup() {
   mpdServer.begin();
   Serial.println("MPD server started");
   
-  // Setup ArduinoOTA
-  // Require a password so network flashing isn't open to anyone on the LAN/AP.
-  // Override at build time with -DOTA_PASSWORD=\"yourpass\".
-  #ifndef OTA_PASSWORD
-  #define OTA_PASSWORD "CubeRadio"
-  #endif
-  ArduinoOTA.setPassword(OTA_PASSWORD);
-  ArduinoOTA
-    .onStart([]() {
-      String type;
-      if (ArduinoOTA.getCommand() == U_FLASH)
-        type = "sketch";
-      else // U_SPIFFS
-        type = "filesystem";
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
-      display->showStatus("OTA Update", "Starting...", type.c_str());
-      // Stop streaming and park the audio task so the update doesn't
-      // compete with the radio for WiFi bandwidth and CPU
-      player.stopStream(false);
-      pauseAudioTask();
-      // Unmount SPIFFS during OTA
-      SPIFFS.end();
-    })
-    .onEnd([]() {
-      Serial.println("\nEnd");
-      display->showStatus("OTA Update", "Complete!", "Rebooting...");
-    })
-    .onProgress([](unsigned int progress, unsigned int total) {
-      int percentage = (progress / (total / 100));
-      Serial.printf("Progress: %u%%\r", percentage);
-      if (percentage % 10 == 0) { // Update display every 10%
-        display->showStatus("OTA Update", (String(percentage) + "%").c_str(), "");
-      }
-    })
-    .onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
-      display->showStatus("OTA Update", "Failed", "Error");
-      // The device keeps running after a failed OTA: undo onStart's prep
-      SPIFFS.begin();
-      resumeAudioTask();
-    });
-  // Start ArduinoOTA
-  ArduinoOTA.begin();
-  Serial.println("ArduinoOTA ready");
   // Update display
   updateDisplay();
 }

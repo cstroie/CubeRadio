@@ -16,7 +16,7 @@
 │                       MAIN LOOP  (core 1, ~150 ms tick)               │
 │                                                                       │
 │  handleRotary()   handleTouch()   updateDisplay()   Audio watchdog    │
-│  handleBoardButton()   OTA.handle()   WiFi reconnect (60 s)           │
+│  handleBoardButton()   WiFi reconnect (60 s)                          │
 │                                                                       │
 │   ┌──────────────┐   ┌──────────────┐   ┌──────────────────────────┐  │
 │   │  WebServer   │   │  WebSocket   │   │     MPDInterface         │  │
@@ -88,7 +88,7 @@ The firmware entry point and glue layer. Owns all global instances, wires
 everything together in `setup()`, and drives the cooperative main loop.
 
 **Responsibilities:**
-- Initialise SPIFFS, WiFi (STA + AP), mDNS, OTA, servers, hardware
+- Initialise SPIFFS, WiFi (STA + AP), mDNS, servers, hardware
 - Register HTTP routes and WebSocket event handler
 - Implement all HTTP API handlers (`handleGetStreams`, `handlePostConfig`, …)
 - Implement audio callbacks (`audio_showstreamtitle`, `audio_bitrate`, …)
@@ -231,7 +231,6 @@ Static assets served from SPIFFS via `server.serveStatic()`.
 
 **mDNS:** `CubeRadio.local`, advertises HTTP (port 80) and MPD (port 6600). Only on boards with PSRAM (`BOARD_HAS_PSRAM`).
 
-**OTA:** `ArduinoOTA.handle()` polled every tick. SPIFFS unmounted during OTA flash.
 
 ---
 

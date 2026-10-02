@@ -48,7 +48,7 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 | Rotary DT         | GPIO 19   |
 | Rotary SW         | GPIO 23   |
 
-> **Note**: Pin assignments can be modified through the web interface or in `src/main.cpp` to match your specific hardware setup.
+> **Note**: Default pins come from `src/pins_wroom.h`, `pins_wrover.h` or `pins_cam.h` (selected by the PlatformIO environment) and can be overridden through the web configuration page.
 
 ## 🚀 Getting Started
 
@@ -71,7 +71,7 @@ CubeRadio is an open-source internet radio player built on the ESP32 platform. I
 
 2. After the device boots, connect to its WiFi access point (default: "CubeRadio-Setup") or access the device's IP address on your network
 
-3. Configure your WiFi networks through the web interface
+3. Configure your WiFi networks through the web interface. To preconfigure, copy `data/wifi.json.example` to `data/wifi.json` (git-ignored) before `uploadfs`.
 
 ## 🌐 Web Interface
 
@@ -107,14 +107,12 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 | `/w`                      | GET/POST | Simple web interface                |
 | `/api/streams`            | GET    | Get all streams in playlist           |
 | `/api/streams`            | POST   | Update playlist                       |
-| `/api/play`               | POST   | Start playing a stream                |
-| `/api/stop`               | POST   | Stop playback                         |
-| `/api/volume`             | POST   | Set volume level                      |
-| `/api/tone`               | POST   | Set bass/midrange/treble              |
+| `/api/player`             | GET/POST | Playback control and player status  |
+| `/api/mixer`              | GET/POST | Volume and bass/mid/treble          |
+| `/api/proxy`              | GET/POST/HEAD | Proxy requests (e.g. favicons) |
 | `/api/status`             | GET    | Get current player status             |
 | `/api/config`             | GET    | Get current configuration             |
 | `/api/config`             | POST   | Update configuration                  |
-| `/api/config/export`      | GET    | Export all configuration files        |
 | `/api/config/import`      | POST   | Import configuration files            |
 | `/api/wifi/scan`          | GET    | Scan for WiFi networks                |
 | `/api/wifi/save`          | POST   | Save WiFi configuration               |
@@ -127,7 +125,7 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 
 ```
 ├── data/              # Web interface files
-│   ├── index.html     # Main control interface
+│   ├── player.html    # Main control interface
 │   ├── playlist.html  # Playlist management
 │   ├── wifi.html      # WiFi configuration
 │   ├── config.html    # Hardware configuration
@@ -150,6 +148,10 @@ Once connected to WiFi, access the web interface by navigating to the ESP32's IP
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 📝 Changelog
+
+### Unreleased
+- Removed ArduinoOTA support
+- `data/wifi.json` is no longer tracked; use `data/wifi.json.example`
 
 ### v1.0.1
 - Fixed MPD command list handling to properly execute buffered commands instead of always returning an error
