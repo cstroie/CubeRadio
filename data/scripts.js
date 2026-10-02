@@ -12,6 +12,9 @@
  * @type {number} treble - Current treble level (-6 to 6 dB)
  */
 let streams = [];
+// Limits mirrored from the firmware (MAX_PLAYLIST_SIZE, StreamInfo::url[256])
+const MAX_PLAYLIST_SIZE = 500;
+const MAX_URL_LENGTH = 255;
 let bass = 0;
 let mid = 0;
 let treble = 0;
@@ -863,7 +866,7 @@ function renderPlaylist() {
  *
  * This function updates either the name or URL field of a stream at the specified index.
  * It performs appropriate validation based on the field being updated:
- * - For URLs: Validates format, structure, and length (max 128 chars)
+ * - For URLs: Validates format, structure, and length (max 255 chars)
  * - For names: Validates non-empty and length (max 96 chars)
  *
  * @param {number} index - The index of the stream to update
@@ -1893,7 +1896,7 @@ function handleDragEnd(e) {
  * This function handles the addition of a new stream to the playlist. It performs
  * comprehensive validation on both the stream name and URL including:
  * - Non-empty validation
- * - Length limits (96 chars for name, 128 chars for URL)
+ * - Length limits (96 chars for name, 255 chars for URL)
  * - URL format validation (must start with http:// or https://)
  * - Proper URL structure validation
  *
@@ -1910,8 +1913,8 @@ function addStation() {
   name.removeAttribute("aria-invalid");
   url.removeAttribute("aria-invalid");
   // Check if playlist is already at maximum capacity
-  if (streams.length >= 20) {
-    showModal("Error", "Playlist is full. Maximum 20 streams allowed.");
+  if (streams.length >= MAX_PLAYLIST_SIZE) {
+    showModal("Error", `Playlist is full. Maximum ${MAX_PLAYLIST_SIZE} streams allowed.`);
     return;
   }
   // Debug log
@@ -2506,7 +2509,7 @@ async function downloadPLS() {
  * name and URL properties.
  *
  * The function performs validation on both names (max 96 chars) and URLs
- * (must be valid HTTP/HTTPS URLs, max 128 chars).
+ * (must be valid HTTP/HTTPS URLs, max 255 chars).
  *
  * @param {string} m3uContent - The raw M3U file content as a string
  * @returns {string} - JSON string representation of the playlist
@@ -2553,7 +2556,7 @@ function convertM3UToJSON(m3uContent) {
           currentName = currentName.substring(0, 93) + "...";
         }
 
-        if (line.length <= 128) {
+        if (line.length <= MAX_URL_LENGTH) {
           streams.push({
             name: currentName,
             url: line,
@@ -2582,7 +2585,7 @@ function convertM3UToJSON(m3uContent) {
  * #EXTINF metadata lines for each stream followed by the URL.
  *
  * The function performs validation on both names (max 96 chars) and URLs
- * (must be valid HTTP/HTTPS URLs, max 128 chars) and skips invalid entries.
+ * (must be valid HTTP/HTTPS URLs, max 255 chars) and skips invalid entries.
  *
  * @param {Array} jsonData - Array of stream objects with name and url properties
  * @returns {string} - M3U formatted playlist as a string
@@ -2613,7 +2616,7 @@ function convertJSONToM3U(jsonData) {
         }
 
         // Validate URL length
-        if (item.url.length > 128) {
+        if (item.url.length > MAX_URL_LENGTH) {
           console.warn("Skipping URL that exceeds maximum length:", item.url);
           return;
         }
@@ -2641,7 +2644,7 @@ function convertJSONToM3U(jsonData) {
  * name and URL properties.
  *
  * The function performs validation on both names (max 96 chars) and URLs
- * (must be valid HTTP/HTTPS URLs, max 128 chars).
+ * (must be valid HTTP/HTTPS URLs, max 255 chars).
  *
  * @param {string} plsContent - The raw PLS file content as a string
  * @returns {string} - JSON string representation of the playlist
@@ -2704,7 +2707,7 @@ function convertPLSToJSON(plsContent) {
           name = name.substring(0, 93) + "...";
         }
 
-        if (entry.url.length <= 128) {
+        if (entry.url.length <= MAX_URL_LENGTH) {
           streams.push({
             name: name,
             url: entry.url,
@@ -2735,7 +2738,7 @@ function convertPLSToJSON(plsContent) {
  * and File/Title entries for each stream.
  *
  * The function performs validation on both names (max 96 chars) and URLs
- * (must be valid HTTP/HTTPS URLs, max 128 chars) and skips invalid entries.
+ * (must be valid HTTP/HTTPS URLs, max 255 chars) and skips invalid entries.
  *
  * @param {Array} jsonData - Array of stream objects with name and url properties
  * @returns {string} - PLS formatted playlist as a string
@@ -2761,7 +2764,7 @@ function convertJSONToPLS(jsonData) {
         }
 
         // Validate URL length
-        if (item.url.length > 128) {
+        if (item.url.length > MAX_URL_LENGTH) {
           console.warn("Skipping URL that exceeds maximum length:", item.url);
           return;
         }
@@ -3366,7 +3369,7 @@ function validateStreamURL(url) {
     return false;
   }
   // Validate URL length
-  if (url.length > 128) {
+  if (url.length > MAX_URL_LENGTH) {
     return false;
   }
   return true;
