@@ -1308,6 +1308,10 @@ void handleGetStreams() {
  * and validated line by line, so the request is never held in RAM.
  */
 void handlePostStreamsUpload() {
+  // Multipart form uploads reach this callback too, but without a raw buffer
+  String contentType = server.header("Content-Type");
+  contentType.toLowerCase();
+  if (contentType.startsWith("multipart/")) return;
   HTTPRaw& raw = server.raw();
   switch (raw.status) {
     case RAW_START:
@@ -2040,6 +2044,9 @@ bool initSPIFFS() {
  * Configures all HTTP routes and static file mappings for the web server
  */
 void setupWebServer() {
+  // handlePostStreamsUpload() needs the request Content-Type
+  const char* requestHeaders[] = {"Content-Type"};
+  server.collectHeaders(requestHeaders, 1);
   server.on("/api/streams", HTTP_GET, handleGetStreams);
   server.on("/api/streams", HTTP_POST, handlePostStreams, handlePostStreamsUpload);
   server.on("/api/player", HTTP_GET, handlePlayer);
