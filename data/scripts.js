@@ -3366,43 +3366,22 @@ function escapeHtml(unsafe) {
 /**
  * @brief Make a proxy request through the ESP32
  * @param {string} url - Target URL to request
- * @param {Object} options - Fetch options (method, headers, body, etc.)
+ * @param {Object} options - Fetch options (only headers are used; the proxy is GET only)
  * @returns {Promise<Response>} - Fetch response
  */
 async function proxyFetch(url, options = {}) {
-  // Replace HTTPS with HTTP since the proxy crashes on SSL
+  // The device proxy only fetches plain HTTP (TLS needs more heap than the
+  // radio can spare), so downgrade HTTPS URLs
   let httpUrl = url;
-  if (url.startsWith('https://')) {
-    httpUrl = 'http://' + url.substring(8);
+  if (url.startsWith("https://")) {
+    httpUrl = "http://" + url.substring(8);
   }
-  
   const proxyUrl = `/api/proxy?url=${encodeURIComponent(httpUrl)}`;
-  
-  // Only support GET and POST methods
-  const method = options.method || 'GET';
-  if (method !== 'GET' && method !== 'POST') {
-    throw new Error('Only GET and POST methods are supported');
-  }
-  
-  // Prepare the request options for the proxy
-  const proxyOptions = {
-    method: method,
-    headers: {
-      'X-Requested-With': 'XMLHttpRequest',
-      ...options.headers
-    }
-  };
-  
-  // Add body for POST requests
-  if (method === 'POST' && options.body) {
-    proxyOptions.headers['Content-Type'] = options.headers?.['Content-Type'] || 'application/json';
-    proxyOptions.body = options.body;
-  }
-  
-  // Make the request
   return fetch(proxyUrl, {
-    method: method,
-    headers: proxyOptions.headers,
-    body: method === 'POST' ? proxyOptions.body : undefined
+    method: "GET",
+    headers: {
+      "X-Requested-With": "XMLHttpRequest",
+      ...options.headers,
+    },
   });
 }

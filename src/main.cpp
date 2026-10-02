@@ -1873,8 +1873,11 @@ void sendStatusToClients(bool fullStatus) {
 
 /**
  * @brief Handle HTTP proxy requests
- * Acts as a transparent proxy to circumvent CORS restrictions
- * Forwards requests to target URLs and returns responses
+ * Fetches a plain HTTP URL for the web UI (remote playlists, cover art the
+ * browser could not load directly) and streams the response back.
+ * @details GET only, and HTTPS is refused: a TLS session needs 30-40 KB of
+ * heap, which the radio cannot spare while streaming. The web UI downgrades
+ * https:// URLs before calling the proxy.
  */
 void handleProxyRequest() {
   // Check if we have a URL parameter
@@ -1885,113 +1888,72 @@ void handleProxyRequest() {
   // Get the target URL
   String targetUrl = server.arg("url");
   // Validate URL format
-  if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-    sendJsonResponse("error", "Invalid URL format. Must start with http:// or https://", 400);
+  if (!targetUrl.startsWith("http://")) {
+    sendJsonResponse("error", "Invalid URL: only http:// is supported", 400);
     return;
   }
   // Create HTTP client
   HTTPClient http;
   // Set timeouts to prevent hanging
   http.setTimeout(5000);
-  // Configure the request based on the original method
   http.begin(targetUrl);
   // HTTPClient only stores response headers explicitly requested via
   // collectHeaders(); register Content-Type so it can be forwarded
   const char* collectedHeaders[] = {"Content-Type"};
   http.collectHeaders(collectedHeaders, 1);
-  // Variable to hold HTTP response code
-  int httpResponseCode;
-  // Handle different HTTP methods
-  if (server.method() == HTTP_GET) {
-    httpResponseCode = http.GET();
-  } else if (server.method() == HTTP_HEAD) {
-    httpResponseCode = http.GET(); // Use GET but we'll only send headers
-  } else if (server.method() == HTTP_POST) {
-    // Get request body if present
-    String requestBody = server.arg("plain");
-    httpResponseCode = http.POST(requestBody);
-  } else {
-    http.end();
-    sendJsonResponse("error", "Unsupported HTTP method", 405);
-    return;
-  }
-  // Check for HTTP errors
-  if (httpResponseCode > 0) {
-    // For HEAD requests, only send headers without content
-    if (server.method() == HTTP_HEAD) {
-      // Get content type
-      String contentType = http.header("Content-Type");
-      if (contentType.isEmpty()) {
-        // Try to determine content type from URL
-        if (targetUrl.endsWith(".png") || targetUrl.endsWith(".PNG")) {
-          contentType = "image/png";
-        } else if (targetUrl.endsWith(".jpg") || targetUrl.endsWith(".jpeg") || 
-                   targetUrl.endsWith(".JPG") || targetUrl.endsWith(".JPEG")) {
-          contentType = "image/jpeg";
-        } else if (targetUrl.endsWith(".gif") || targetUrl.endsWith(".GIF")) {
-          contentType = "image/gif";
-        } else {
-          contentType = "application/octet-stream";
-        }
-      }
-      // Send response with proper content type and length (no content body for HEAD)
-      server.setContentLength(http.getSize());
-      server.send(httpResponseCode, contentType, "");
-    } else {
-      // For GET requests, stream the response directly to client
-      WiFiClient * stream = http.getStreamPtr();
-      // Get content type
-      String contentType = http.header("Content-Type");
-      if (contentType.isEmpty()) {
-        // Try to determine content type from URL
-        if (targetUrl.endsWith(".png") || targetUrl.endsWith(".PNG")) {
-          contentType = "image/png";
-        } else if (targetUrl.endsWith(".jpg") || targetUrl.endsWith(".jpeg") || 
-                   targetUrl.endsWith(".JPG") || targetUrl.endsWith(".JPEG")) {
-          contentType = "image/jpeg";
-        } else if (targetUrl.endsWith(".gif") || targetUrl.endsWith(".GIF")) {
-          contentType = "image/gif";
-        } else {
-          contentType = "application/octet-stream";
-        }
-      }
-      // getSize() returns -1 for chunked/unknown length; cap such responses so an
-      // endless stream (e.g. a radio URL) can never block the main loop forever
-      const size_t maxProxyBytes = 256 * 1024;
-      const unsigned long maxProxyMillis = 10000;
-      int sizeHint = http.getSize();
-      size_t contentLength = (sizeHint > 0) ? (size_t)sizeHint : 0;
-      // Send response with proper content type and length
-      server.setContentLength((sizeHint > 0) ? (size_t)sizeHint : CONTENT_LENGTH_UNKNOWN);
-      server.send(httpResponseCode, contentType, "");
-      // Stream the content
-      const size_t bufferSize = 1024;
-      uint8_t buffer[bufferSize];
-      size_t totalBytesRead = 0;
-      unsigned long proxyStart = millis();
-      // Read and send data in chunks
-      while (http.connected() && server.client().connected() &&
-             (contentLength == 0 || totalBytesRead < contentLength)) {
-        // Enforce byte and time caps for unknown-length responses
-        if (totalBytesRead >= maxProxyBytes || millis() - proxyStart > maxProxyMillis) {
-          break;
-        }
-        size_t bytesAvailable = stream->available();
-        if (bytesAvailable) {
-          size_t bytesRead = stream->readBytes(buffer, min(bytesAvailable, bufferSize));
-          server.client().write(buffer, bytesRead);
-          totalBytesRead += bytesRead;
-        }
-        // Yield to other tasks
-        yield();
-      }
-    }
-  } else {
-    // HTTP error occurred
+  int httpResponseCode = http.GET();
+  if (httpResponseCode <= 0) {
     http.end();
     Serial.printf("HTTP request failed: %s\n", http.errorToString(httpResponseCode).c_str());
     sendJsonResponse("error", "Proxy request failed: " + String(http.errorToString(httpResponseCode)), 500);
     return;
+  }
+  // Stream the response directly to the client
+  WiFiClient * stream = http.getStreamPtr();
+  String contentType = http.header("Content-Type");
+  if (contentType.isEmpty()) {
+    // Try to determine content type from URL
+    String lowerUrl = targetUrl;
+    lowerUrl.toLowerCase();
+    if (lowerUrl.endsWith(".png")) {
+      contentType = "image/png";
+    } else if (lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg")) {
+      contentType = "image/jpeg";
+    } else if (lowerUrl.endsWith(".gif")) {
+      contentType = "image/gif";
+    } else {
+      contentType = "application/octet-stream";
+    }
+  }
+  // getSize() returns -1 for chunked/unknown length; cap such responses so an
+  // endless stream (e.g. a radio URL) can never block the main loop forever
+  const size_t maxProxyBytes = 256 * 1024;
+  const unsigned long maxProxyMillis = 10000;
+  int sizeHint = http.getSize();
+  size_t contentLength = (sizeHint > 0) ? (size_t)sizeHint : 0;
+  // Send response with proper content type and length
+  server.setContentLength((sizeHint > 0) ? (size_t)sizeHint : CONTENT_LENGTH_UNKNOWN);
+  server.send(httpResponseCode, contentType, "");
+  // Stream the content
+  const size_t bufferSize = 1024;
+  uint8_t buffer[bufferSize];
+  size_t totalBytesRead = 0;
+  unsigned long proxyStart = millis();
+  // Read and send data in chunks
+  while (http.connected() && server.client().connected() &&
+         (contentLength == 0 || totalBytesRead < contentLength)) {
+    // Enforce byte and time caps for unknown-length responses
+    if (totalBytesRead >= maxProxyBytes || millis() - proxyStart > maxProxyMillis) {
+      break;
+    }
+    size_t bytesAvailable = stream->available();
+    if (bytesAvailable) {
+      size_t bytesRead = stream->readBytes(buffer, min(bytesAvailable, bufferSize));
+      server.client().write(buffer, bytesRead);
+      totalBytesRead += bytesRead;
+    }
+    // Yield to other tasks
+    yield();
   }
   // End the HTTP connection
   http.end();
@@ -2135,8 +2097,6 @@ void setupWebServer() {
   server.on("/api/wifi/status", HTTP_GET, handleWiFiStatus);
   server.on("/api/wifi/config", HTTP_GET, handleWiFiConfig);
   server.on("/api/proxy", HTTP_GET, handleProxyRequest);
-  server.on("/api/proxy", HTTP_POST, handleProxyRequest);
-  server.on("/api/proxy", HTTP_HEAD, handleProxyRequest);
   server.on("/w", HTTP_GET, handleSimpleWebPage);
   server.on("/w", HTTP_POST, handleSimpleWebPage);
   server.serveStatic("/", SPIFFS, "/player.html");
